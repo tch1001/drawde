@@ -45,11 +45,11 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
   );
 }
 
-export function SelectionPanel() {
+export function SelectionPanel({ width }: { width: number }) {
   const regions = useRegions();
 
   return (
-    <aside className="dd-panel">
+    <aside className="dd-panel" style={{ width }}>
       <header className="dd-panel-head">
         <h2>Context</h2>
         <span className="dd-count">{regions.length}</span>

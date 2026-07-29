@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test -c tests/playwright.config.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
@@ -22,12 +24,14 @@
     "@embedpdf/core": "^2.14.4",
     "@embedpdf/engines": "^2.14.4",
     "@embedpdf/models": "^2.14.4",
+    "@embedpdf/plugin-bookmark": "^2.14.4",
     "@embedpdf/plugin-capture": "^2.14.4",
     "@embedpdf/plugin-document-manager": "^2.14.4",
     "@embedpdf/plugin-interaction-manager": "^2.14.4",
     "@embedpdf/plugin-render": "^2.14.4",
     "@embedpdf/plugin-scroll": "^2.14.4",
     "@embedpdf/plugin-selection": "^2.14.4",
+    "@embedpdf/plugin-thumbnail": "^2.14.4",
     "@embedpdf/plugin-tiling": "^2.14.4",
     "@embedpdf/plugin-viewport": "^2.14.4",
     "@embedpdf/plugin-zoom": "^2.14.4",

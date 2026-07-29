@@ -68,18 +68,22 @@ export function BoxSelectLayer({ documentId, pageIndex }: Props) {
       handlers: {
         onPointerDown: (pos, evt) => {
           startRef.current = pos;
-          // shift (or meta/ctrl) = add to the existing selection, like Cursor's add-to-chat
-          additiveRef.current = Boolean(evt?.shiftKey || evt?.metaKey || evt?.ctrlKey);
+          // shift (or meta) = add to the existing selection, like Cursor's add-to-chat.
+          // NB: ctrl is excluded — ctrl+drag/scroll is reserved for zoom.
+          additiveRef.current = Boolean(evt?.shiftKey || evt?.metaKey);
+          // keep receiving move/up even when the pointer leaves the page element
+          evt?.setPointerCapture?.();
           setPreview({ origin: { x: pos.x, y: pos.y }, size: { width: 0, height: 0 } });
         },
         onPointerMove: (pos) => {
           if (!startRef.current) return;
           setPreview(norm(startRef.current, pos));
         },
-        onPointerUp: (pos) => {
+        onPointerUp: (pos, evt) => {
           const start = startRef.current;
           startRef.current = null;
           setPreview(null);
+          evt?.releasePointerCapture?.();
           if (!start) return;
 
           const rect = norm(start, pos);
