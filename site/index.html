@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drawde</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✏️</text></svg>">
+<style>
+  :root { --bg:#0f1117; --panel:#181b24; --text:#e8eaf0; --muted:#9aa1b5; --accent:#7aa2f7; --border:#2a2f3f; --green:#9ece6a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; line-height:1.55; }
+  .wrap { max-width:820px; margin:0 auto; padding:3rem 1.25rem; }
+  h1 { font-size:2.2rem; margin:0 0 .2rem; }
+  .sub { color:var(--muted); margin-bottom:2.5rem; }
+  a { color:var(--accent); text-decoration:none; }
+  .card { display:block; background:var(--panel); border:1px solid var(--border); border-radius:12px;
+          padding:1.4rem 1.5rem; margin-bottom:1rem; transition:border-color .15s; }
+  .card:hover { border-color:var(--accent); }
+  .card h2 { margin:0 0 .3rem; font-size:1.15rem; color:var(--text); }
+  .card p { margin:0; font-size:.9rem; color:var(--muted); }
+  .badge { display:inline-block; font-size:.68rem; padding:.1rem .5rem; border-radius:999px;
+           border:1px solid var(--green); color:var(--green); margin-left:.5rem; vertical-align:middle; }
+  .badge.old { border-color:var(--border); color:var(--muted); }
+  kbd { font-size:.75em; padding:.05em .35em; border:1px solid var(--border); border-bottom-width:2px;
+        border-radius:4px; background:#1f2330; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>drawde</h1>
+  <div class="sub">theoretical physics reading assistant &mdash; development previews</div>
+
+  <a class="card" href="./viewer/index.html">
+    <h2>Phase 2 &middot; the viewer <span class="badge">new</span></h2>
+    <p>
+      Our own viewer built on EmbedPDF. <kbd>R</kbd> region mode &mdash; drag a box around an equation
+      and the high-DPI crop lands in the right panel. <kbd>T</kbd> text mode. Hold <kbd>Shift</kbd> to
+      add to the selection instead of replacing it; box and text selections mix freely.
+      Each box persists on the page with a &times; to remove it.
+    </p>
+  </a>
+
+  <a class="card" href="./pdf-readers/index.html">
+    <h2>Phase 1 &middot; PDF reader survey <span class="badge old">reference</span></h2>
+    <p>
+      Comparison of 14 viewer libraries with 7 live demos &mdash; pdf.js, EmbedPDF, PDFSlick,
+      mupdf.js and friends. The research that led to picking EmbedPDF as our base.
+    </p>
+  </a>
+</div>
+</body>
+</html>
