@@ -1,6 +1,6 @@
 # HANDOFF — read this first
 
-Last updated: **2026-07-29**, end of session 1.
+Last updated: **2026-07-30**, session 1 (continued).
 Read `README.md` for the project goal, then `docs/architecture-notes.md` for the design decisions.
 
 ---
@@ -17,11 +17,17 @@ Read `README.md` for the project goal, then `docs/architecture-notes.md` for the
 
 | What | Command | Port |
 |---|---|---|
-| Phase-1 demo site | `cd ~/drawde/explorations/pdf-readers && python3 -m http.server 8787 --bind 127.0.0.1` | 8787 |
-| Phase-2 viewer scratch | `cd ~/drawde/viewer && python3 -m http.server 8788 --bind 127.0.0.1` | 8788 |
+| Combined site (hub + viewer + phase-1 demos) | `cd ~/drawde/site && python3 -m http.server 8787 --bind 127.0.0.1` | 8787 |
 | Tunnel (→ 8787) | `cloudflared tunnel --url http://127.0.0.1:8787` | — |
+| Viewer dev server (optional, HMR) | `cd ~/drawde/app && npx vite` | 5180 |
 
-Tunnel URL as of session 1: `https://algebra-fiction-enforcement-outcome.trycloudflare.com`
+`~/drawde/site/` is the single served root: `index.html` hub + symlinks `viewer → ../app/dist` and
+`pdf-readers → ../explorations/pdf-readers`. **After changing the app, run `cd ~/drawde/app && npx vite build`**
+— the tunnel serves `dist`, not the dev server.
+
+Start background processes **detached** (`setsid nohup … &` with `< /dev/null`), otherwise they die with the tool call.
+
+Tunnel URL as of session 1: `https://clips-admission-scout-stats.trycloudflare.com`
 **Quick tunnels get a new random URL on every restart** — always re-extract it and tell the user:
 ```bash
 nohup cloudflared tunnel --url http://127.0.0.1:8787 > /tmp/cf.log 2>&1 &
@@ -40,7 +46,28 @@ Consider serving one port with sub-paths for everything so a single tunnel cover
 
 ## What the user asked for that is NOT yet done
 
-### 1. Phase 2 viewer (in progress — the active task)
+### 0. Phase 2 viewer — ✅ BUILT (session 1). Lives in `~/drawde/app`.
+
+Everything in the spec below is working and browser-verified through the tunnel. Stack: **React + Vite + EmbedPDF headless packages** (not the snippet).
+
+Files:
+- `src/types.ts` — the `Region` type (the universal currency; see architecture notes) + `CROP_SCALE = 4`
+- `src/store.ts` — framework-agnostic external store for `Region[]`. **The eventual AI command bus should push into this same store the mouse writes to.**
+- `src/modes.ts` — `BOX_MODE = 'drawdeBox'` (ours), `TEXT_MODE = 'pointerMode'` (EmbedPDF's built-in)
+- `src/BoxSelectLayer.tsx` — per-page layer: registers pointer handlers for box mode, draws preview + persistent rects with ✕, calls `renderPageRect` for the high-DPI crop
+- `src/SelectionPanel.tsx` — right-hand context panel
+- `src/App.tsx` — plugin registration, layer composition, R/T keybinding, text-selection→Region bridge
+
+Implementation notes worth keeping:
+- **Crops come from `render.forDocument(id).renderPageRect({pageIndex, rect, options:{scaleFactor: CROP_SCALE}})`**, *not* the capture plugin — capture's marquee is transient/exclusive and fights persistent multi-select. `renderPageRect` is a clean crop source at any scale.
+- `PageLayout` (the `renderPage` callback arg) **has no `scale` field** — read scale from `useDocumentState(documentId).scale`, the same way `PagePointerProvider` does. Passing a non-existent `scale` prop silently gives `NaN` positions and rectangles pile up at 0,0.
+- Shift state is sampled on `pointerdown` via a capture-phase window listener (`shiftHeld` in `App.tsx`) because keyup can beat pointerup.
+- `interaction.addExclusionClass('dd-no-interaction')` keeps our toolbar from eating page pointer events.
+- Box mode is registered `exclusive: false` — `exclusive: true` makes `PagePointerProvider` overlay a z-index-10 div that would block the ✕ buttons.
+
+**Next on the viewer:** multi-page selections, drag-to-move/resize existing boxes, zoom-independent rect stability check, and wiring the "Ask drawde" button.
+
+### 1. Original phase-2 spec (for reference — all of this is now implemented)
 User's spec, verbatim intent:
 - Build our **own PDF viewer library on EmbedPDF as the base**.
 - Ship first feature: **select a rectangle → the cropped image appears in a right-hand panel.**
@@ -52,13 +79,7 @@ User's spec, verbatim intent:
 - Explicitly modelled on **Cursor's "add to chat"** experience.
 - "later we will pipe it to some actual OCR and LLM" — so keep a clean seam where selections become model input.
 
-**Status: research done, no viewer code written yet.** `viewer/probe.html` is only an API probe (do not mistake it for the app). Read `docs/embedpdf-api-notes.md` **before writing code** — it contains the live-probed API surface and the crucial snippet-vs-headless finding.
-
-**Recommended approach** (from the probe): use the **headless EmbedPDF plugin packages + a bundler (Vite)**, not the CDN snippet. The snippet renders into shadow DOM with blob-`<img>` pages and no page data attributes, which makes persistent overlays hostile. Headless lets us compose `<Viewport>/<Scroller>/<PagePointerProvider>/<RenderLayer>` and own the page DOM.
-
-Design the selection store around the **`Region`** abstraction in `docs/architecture-notes.md` — box and text selections should produce the same object type. That's what makes the right panel and the later OCR/LLM pipe uniform.
-
-Note: EmbedPDF's built-in marquee capture is **transient** (one rect, cleared on commit). For persistent multi-rect we keep our own `Region[]` and call `captureArea(pageIndex, rect)` per region.
+`viewer/probe.html` is a leftover API probe, not the app — the app is `~/drawde/app`.
 
 ### 2. OCR comparison demo (requested, not started)
 User's request, verbatim intent:

@@ -23,7 +23,7 @@ The wedge: **the PDF is the first-class object.** Selection → AI → editable 
 | Phase | Status | Description |
 |---|---|---|
 | 1. PDF reader survey | ✅ done | Comparison site of viewer technologies — see `docs/research-pdf-viewers.md` |
-| 2. Custom viewer | 🔨 in progress | Own viewer on EmbedPDF: rectangle + text selection, "add to chat" panel |
+| 2. Custom viewer | ✅ v1 done | Own viewer on EmbedPDF (`app/`): rectangle + text selection → `Region`s, "add to chat" panel |
 | 3. OCR/LLM pipeline | 📋 researched | Selection → LaTeX. See `docs/research-ocr.md`. Comparison demo still to build |
 | 4. Gap-filling AI | ⏳ not started | Region + paper context → expanded derivation |
 | 5. LaTeX playground | ⏳ not started | Paper-aware editor with symbol autocomplete |
@@ -40,10 +40,21 @@ drawde/
 │   ├── research-pdf-viewers.md    # phase 1 findings
 │   ├── embedpdf-api-notes.md      # live API probe of EmbedPDF — read before building
 │   └── research-ocr.md            # phase 3 findings (pending agent)
+├── app/                    # ← phase 2: the drawde viewer (React + Vite + EmbedPDF headless)
+├── site/                   # served root: hub index + symlinks to app/dist and the phase-1 demos
 ├── explorations/
 │   └── pdf-readers/        # phase 1 comparison site (7 working demos)
-└── viewer/                 # phase 2 custom viewer (in progress)
+└── viewer/                 # leftover API probe, not the app
 ```
+
+## Running it
+
+```bash
+cd app && npx vite build          # build the viewer into app/dist
+cd ../site && python3 -m http.server 8787 --bind 127.0.0.1
+cloudflared tunnel --url http://127.0.0.1:8787
+```
+For development with hot reload: `cd app && npx vite` (port 5180).
 
 ## Development notes
 
