@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mupdf.js — drawde PDF explorer</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  .demo-body { background: #2a2d36; padding: 1.5rem 0; text-align: center; }
+  .demo-body img {
+    display: block; margin: 0 auto 1.25rem; max-width: 92%;
+    box-shadow: 0 4px 18px rgba(0,0,0,.5); background: #fff;
+  }
+  #status { color: var(--muted); font-family: monospace; font-size: .8rem; padding: 1rem; }
+</style>
+</head>
+<body>
+<div class="demo-topbar">
+  <a href="../index.html">&larr; back</a>
+  <h1>mupdf.js (MuPDF → WASM)</h1>
+  <div class="notes">Artifex's C engine compiled to WASM. Not a viewer — a rendering/parsing <em>engine</em> (fast raster, structured text with coordinates, no UI). Demo renders the first pages to PNG in your browser and dumps text-block coordinates.</div>
+</div>
+<div class="demo-body" id="out"><div id="status">loading mupdf WASM from esm.sh (~5&nbsp;MB)&hellip;</div></div>
+<div class="errbox" id="err"></div>
+<script type="module">
+  const errbox = document.getElementById("err");
+  const status = document.getElementById("status");
+  const out = document.getElementById("out");
+  try {
+    // esm.sh wraps mupdf in a node shim that breaks in-browser — load the package's own ESM build
+    const mupdf = await import("https://cdn.jsdelivr.net/npm/mupdf@1.28.0/dist/mupdf.js");
+    status.textContent = "WASM loaded — fetching PDF…";
+    const buf = await (await fetch("../assets/sample.pdf")).arrayBuffer();
+    const doc = mupdf.Document.openDocument(buf, "application/pdf");
+    const nPages = Math.min(doc.countPages(), 4);
+    status.textContent = `rendering first ${nPages} pages…`;
+    for (let i = 0; i < nPages; i++) {
+      const page = doc.loadPage(i);
+      const pix = page.toPixmap(mupdf.Matrix.scale(2, 2), mupdf.ColorSpace.DeviceRGB, false, true);
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(new Blob([pix.asPNG()], { type: "image/png" }));
+      img.style.width = (pix.getWidth() / 2) + "px";
+      out.appendChild(img);
+      if (i === 0) {
+        // show off structured-text: block coordinates from page 1
+        const st = page.toStructuredText().asJSON();
+        const blocks = JSON.parse(st).blocks.slice(0, 6);
+        const pre = document.createElement("pre");
+        pre.id = "status";
+        pre.style.textAlign = "left";
+        pre.style.margin = "0 auto 1rem";
+        pre.style.maxWidth = "800px";
+        pre.style.whiteSpace = "pre-wrap";
+        pre.textContent = "page 1 structured-text (first 6 blocks, bbox = text coordinates):\n" +
+          blocks.map(b => `  bbox(${[b.bbox.x,b.bbox.y,b.bbox.w,b.bbox.h].map(v=>v.toFixed(0))}) "${(b.lines?.[0]?.text ?? "").slice(0,60)}"`).join("\n");
+        out.appendChild(pre);
+      }
+    }
+    status.remove();
+  } catch (e) {
+    errbox.style.display = "block";
+    errbox.textContent = "mupdf.js failed to load/render:\n" + (e.stack || e);
+    status.remove();
+  }
+</script>
+</body>
+</html>

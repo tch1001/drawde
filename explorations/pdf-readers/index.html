@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drawde — PDF reader exploration</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<header class="site">
+  <h1>drawde · phase 1 — PDF reader tech</h1>
+  <div class="sub">
+    Candidate viewer technologies for the paper-reading pane. Sample document:
+    Maldacena, <a href="assets/sample.pdf"><em>The Large N Limit of Superconformal Field Theories and Supergravity</em></a>
+    (hep-th/9711200, 22 pages, equation-dense — a realistic stress test).
+  </div>
+</header>
+
+<div class="note">
+  What drawde ultimately needs from a viewer: <b>① text-selection layer</b> (select a derivation span),
+  <b>② programmatic access to text/region coordinates</b> (send the right crop + context to the AI),
+  <b>③ custom overlays/annotations</b> (anchor AI output to a spot in the paper),
+  <b>④ smooth long-document scrolling</b>. Judge the demos with those in mind.
+</div>
+
+<h2>Live demos</h2>
+<div class="grid">
+  <div class="card">
+    <h3>Native browser viewer <span class="badge live">live</span></h3>
+    <div class="meta">0 kB JS · built into every browser</div>
+    <p>Plain <code>&lt;iframe&gt;</code>. The baseline: instant, perfect fidelity, but a black box — no coordinates, no overlays, no API. Included as the control group.</p>
+    <div class="actions"><a class="btn" href="demos/native.html">Open demo</a></div>
+  </div>
+
+  <div class="card">
+    <h3>PDFObject <span class="badge live">live</span></h3>
+    <div class="meta">MIT · ~4 kB · embed helper</div>
+    <p>Feature-detecting wrapper around the native viewer with graceful fallback. Same black-box limits — listed for completeness.</p>
+    <div class="actions"><a class="btn" href="demos/pdfobject.html">Open demo</a> <a href="https://github.com/pipwerks/PDFObject">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>PDF.js — prebuilt viewer <span class="badge live">live</span></h3>
+    <div class="meta">Apache-2.0 · Mozilla · the Firefox viewer</div>
+    <p>Full-featured drop-in viewer (search, thumbnails, outline, zoom, text selection, highlight &amp; ink annotations). Heavy chrome, but everything works out of the box.</p>
+    <div class="actions"><a class="btn" href="demos/pdfjs-viewer.html">Open demo</a> <a href="https://github.com/mozilla/pdf.js">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>PDF.js — as a library <span class="badge live">live</span></h3>
+    <div class="meta">Apache-2.0 · pdfjs-dist · custom UI</div>
+    <p>Roll-your-own viewer: canvas + selectable text layer, fully ours. This demo includes a <b>region-select</b> prototype that reports PDF-space coordinates — the core drawde interaction.</p>
+    <div class="actions"><a class="btn" href="demos/pdfjs-custom.html">Open demo</a> <a href="https://github.com/mozilla/pdf.js">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>PDFSlick <span class="badge live">live</span></h3>
+    <div class="meta">MIT · pdf.js internals + state store</div>
+    <p>Middle ground: pdf.js's real viewer machinery (virtualized scrolling, zoom, find) minus Mozilla's UI chrome, exposed as a store you build UI around. Vanilla/React/Solid/Svelte.</p>
+    <div class="actions"><a class="btn" href="demos/pdfslick.html">Open demo</a> <a href="https://github.com/pdfslick/pdfslick">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>EmbedPDF <span class="badge live">live</span></h3>
+    <div class="meta">MIT · PDFium (WASM) engine · plugin system</div>
+    <p>Newer (2024+) open-source viewer on a PDFium WASM core — Chrome-grade rendering fidelity, plugin architecture with annotations, search, redaction. Framework-agnostic.</p>
+    <div class="actions"><a class="btn" href="demos/embedpdf.html">Open demo</a> <a href="https://github.com/embedpdf/embed-pdf-viewer">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>mupdf.js <span class="badge live">live</span></h3>
+    <div class="meta">AGPL-3.0 (or commercial) · MuPDF → WASM</div>
+    <p>Not a viewer — an <em>engine</em>: very fast raster + structured text with per-block coordinates (great for the AI pipeline). Demo renders pages to PNG client-side and dumps text bboxes. AGPL is the catch.</p>
+    <div class="actions"><a class="btn" href="demos/mupdf.html">Open demo</a> <a href="https://github.com/ArtifexSoftware/mupdf.js">GitHub</a></div>
+  </div>
+</div>
+
+<h2>No live demo (build-step or license-key required)</h2>
+<div class="grid">
+  <div class="card">
+    <h3>react-pdf (wojtekmaj) <span class="badge info">info</span></h3>
+    <div class="meta">MIT · React components over pdf.js</div>
+    <p><code>&lt;Document&gt;</code>/<code>&lt;Page&gt;</code> components — you get pdf.js rendering as idiomatic React, but scroll virtualization, zoom UI, etc. are DIY. The default choice if we go React + custom UI.</p>
+    <div class="actions"><a href="https://github.com/wojtekmaj/react-pdf">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>@react-pdf-viewer <span class="badge commercial">avoid</span></h3>
+    <div class="meta">Non-OSS license · React · <b>archived 2026-03</b></div>
+    <p>Had the best React plugin set (its highlight plugin was exactly our use case) — but the repo was archived in March 2026, last release 2023, pinned to a pdf.js with known CVEs. Community threads say do not use.</p>
+    <div class="actions"><a href="https://github.com/react-pdf-viewer/react-pdf-viewer">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>Lector <span class="badge info">info</span></h3>
+    <div class="meta">MIT · headless React primitives over pdf.js · active (2026-07)</div>
+    <p>Modern successor to the react-pdf-viewer niche: built-in virtualization, pan/zoom, experimental highlights &amp; search. Small (~400★) but shipping weekly. Strong fit if drawde is React with a custom UI.</p>
+    <div class="actions"><a href="https://github.com/anaralabs/lector">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>react-pdf-highlighter <span class="badge info">reference</span></h3>
+    <div class="meta">MIT · React + pdf.js · dormant since 2024</div>
+    <p>Text <em>and rectangular area</em> highlights with position data — precisely the drawde interaction, already built. Unmaintained, so treat as a reference implementation / fork-fodder rather than a dependency.</p>
+    <div class="actions"><a href="https://github.com/agentcooper/react-pdf-highlighter">GitHub</a></div>
+  </div>
+
+  <div class="card">
+    <h3>Apryse WebViewer <span class="badge commercial">commercial</span></h3>
+    <div class="meta">Paid license · WASM engine</div>
+    <p>Industry heavyweight: annotations, collab, editing, measured rendering. Excellent but $$$ and closed — likely overkill for drawde v1.</p>
+    <div class="actions"><a href="https://apryse.com/products/webviewer">Site</a></div>
+  </div>
+
+  <div class="card">
+    <h3>Nutrient (ex-PSPDFKit) <span class="badge commercial">commercial</span></h3>
+    <div class="meta">Paid license · WASM engine</div>
+    <p>Same tier as Apryse: polished SDK, annotation toolkit, AI assistant add-ons. Same objection: cost + closed source.</p>
+    <div class="actions"><a href="https://www.nutrient.io/sdk/web">Site</a></div>
+  </div>
+
+  <div class="card">
+    <h3>Adobe PDF Embed API <span class="badge commercial">free key</span></h3>
+    <div class="meta">Free with API key · hosted by Adobe</div>
+    <p>Adobe-quality viewer embedded via JS API, free tier. But: requires Adobe key, phones home, limited programmatic access to text geometry.</p>
+    <div class="actions"><a href="https://developer.adobe.com/document-services/apis/pdf-embed/">Site</a></div>
+  </div>
+</div>
+
+<h2 id="research">Research notes <span class="badge">data collected 2026-07-29</span></h2>
+<p>Stars/licenses/release dates pulled live from GitHub &amp; npm APIs. "Text coords" = programmatic access to text geometry — the column that matters most for drawde's highlight-a-gap feature.</p>
+
+<table class="compare">
+<thead>
+<tr><th>Library</th><th>Stars</th><th>License</th><th>Latest release</th><th>UI included</th><th>Text select</th><th>Annotations</th><th>Virtualized</th><th>Text coords</th><th>CDN no-build</th></tr>
+</thead>
+<tbody>
+<tr><td>pdf.js</td><td>~53.6k</td><td>Apache-2.0</td><td>v6.2.108 · 2026-07</td><td class="y">prebuilt viewer</td><td class="y">yes</td><td class="y">highlight/ink/text</td><td class="p">lazy pages</td><td class="y">getTextContent</td><td class="y">yes</td></tr>
+<tr><td>EmbedPDF</td><td>~4.3k</td><td>MIT</td><td>v2.14.4 · 2026-06</td><td class="y">yes + plugins</td><td class="y">plugin</td><td class="y">full set, saves to PDF</td><td class="y">yes</td><td class="y">selection rects</td><td class="y">snippet</td></tr>
+<tr><td>react-pdf</td><td>~11.1k</td><td>MIT</td><td>v10.4.1 · 2026-02</td><td class="n">renderer only</td><td class="y">yes</td><td class="p">display only</td><td class="n">DIY</td><td class="y">via pdf.js</td><td class="n">npm</td></tr>
+<tr><td>PDFSlick</td><td>~1.1k</td><td>MIT</td><td>v4.0.0 · 2026-06</td><td class="p">headless store</td><td class="y">yes</td><td class="p">via pdf.js layers</td><td class="y">inherits pdf.js</td><td class="y">via pdf.js</td><td class="p">npm mostly</td></tr>
+<tr><td>Lector</td><td>~389</td><td>MIT</td><td>v3.14.5 · 2026-07</td><td class="n">headless primitives</td><td class="y">yes</td><td class="p">experimental</td><td class="y">built-in</td><td class="y">designed for it</td><td class="n">npm</td></tr>
+<tr><td>react-pdf-highlighter</td><td>~1.4k</td><td>MIT</td><td>dormant 2024</td><td class="p">minimal</td><td class="y">yes</td><td class="y">text + area rects</td><td class="n">no</td><td class="y">emits rects</td><td class="n">npm</td></tr>
+<tr><td>@react-pdf-viewer</td><td>~2.6k</td><td>non-OSS</td><td class="n">archived 2026-03</td><td class="y">yes</td><td class="y">yes</td><td class="y">highlight plugin</td><td class="p">partial</td><td class="y">rects</td><td class="n">npm</td></tr>
+<tr><td>mupdf.js</td><td>~600</td><td class="p">AGPL / paid</td><td>1.28.0 · 2026-06</td><td class="n">engine only</td><td class="n">build it</td><td class="p">programmatic</td><td>n/a</td><td class="y">best-in-class bboxes</td><td class="p">heavy ESM</td></tr>
+<tr><td>PDFium WASM</td><td>4.3k/183</td><td>MIT/BSD-3</td><td>2026-05/06</td><td class="n">engine only</td><td class="n">build it</td><td class="p">programmatic</td><td>n/a</td><td class="y">per-char rects</td><td class="p">feasible</td></tr>
+<tr><td>PDFObject</td><td>~2.5k</td><td>MIT</td><td>2.3.1 · 2025-02</td><td class="p">native viewer</td><td class="p">browser-dep</td><td class="n">no</td><td class="n">no</td><td class="n">none</td><td class="y">yes</td></tr>
+<tr><td>Apryse WebViewer</td><td>closed</td><td class="n">$1.5k+ comm.</td><td>12.0.1 · 2026-07</td><td class="y">full</td><td class="y">yes</td><td class="y">full</td><td class="y">yes</td><td class="y">quads API</td><td class="n">key + assets</td></tr>
+<tr><td>Nutrient (PSPDFKit)</td><td>closed</td><td class="n">commercial</td><td>1.18.0 · 2026-07</td><td class="y">full</td><td class="y">yes</td><td class="y">full</td><td class="y">yes</td><td class="y">textLines API</td><td class="p">key + assets</td></tr>
+<tr><td>Adobe PDF Embed</td><td>closed</td><td class="p">free w/ key</td><td>SaaS</td><td class="y">full (iframe)</td><td class="y">yes</td><td class="y">built-in tools</td><td class="y">yes</td><td class="n">events only</td><td class="y">Adobe CDN</td></tr>
+<tr><td>ngx-extended-pdf-viewer</td><td>~584</td><td>Apache-2.0</td><td>28.1.0 · 2026-07</td><td class="y">full pdf.js viewer</td><td class="y">yes</td><td class="y">pdf.js editor</td><td class="y">inherits</td><td class="y">via pdf.js</td><td class="n">Angular only</td></tr>
+</tbody>
+</table>
+
+<h2>Key takeaways</h2>
+<ul>
+  <li><b>Everything free with a UI is pdf.js underneath</b> — except EmbedPDF, which is PDFium (Chrome's engine) compiled to WASM. Choosing pdf.js-family vs EmbedPDF is the real fork in the road.</li>
+  <li><b>Best geometry APIs</b> (for feeding equation regions to the AI): mupdf.js structured text &gt; PDFium per-char rects &gt; pdf.js <code>getTextContent</code>. mupdf's AGPL is a problem for a closed SaaS; note we could still use it <em>server-side</em> if drawde's backend is open-sourced, or pay Artifex.</li>
+  <li><b>@react-pdf-viewer is dead</b> (archived 2026-03, CVE-pinned) — despite still topping search results. Lector is the living successor for headless React primitives.</li>
+  <li><b>react-pdf-highlighter proves the interaction</b> we want (text + area highlights with rect data) but is unmaintained — fork-fodder, not a dependency.</li>
+  <li><b>Commercial tier</b> (Apryse/Nutrient) is polished but sales-quoted $$$$; Adobe Embed is free but a black-box iframe with no text-geometry access — bad fit for the AI pipeline.</li>
+  <li>pdf.js major-version churn (v4→v6 in ~2 years) regularly breaks wrappers — favor thin wrappers or direct use.</li>
+  <li>A viable hybrid: <b>pdf.js (or EmbedPDF) for the viewing pane</b> + <b>an engine (mupdf/PDFium server-side) for extraction</b> feeding the AI.</li>
+</ul>
+
+</div>
+</body>
+</html>

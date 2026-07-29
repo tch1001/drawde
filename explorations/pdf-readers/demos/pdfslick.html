@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDFSlick — drawde PDF explorer</title>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@pdfslick/core@4.0.0/dist/pdf_viewer.css">
+<style>
+  #viewerContainer { position: absolute; inset: 52px 0 0 0; overflow: auto; background: #2a2d36; }
+</style>
+</head>
+<body>
+<div class="demo-topbar">
+  <a href="../index.html">&larr; back</a>
+  <h1>PDFSlick (@pdfslick/core)</h1>
+  <div class="notes">Thin state-store wrapper around pdf.js internals (viewer machinery without Mozilla's chrome). Vanilla/React/Solid/Svelte flavors. Loaded here from CDN via esm.sh.</div>
+</div>
+<div id="viewerContainer">
+  <div id="viewer" class="pdfSlickViewer pdfViewer"></div>
+</div>
+<div class="errbox" id="err"></div>
+<script type="module">
+  const errbox = document.getElementById("err");
+  try {
+    // unbundled pdf.js viewer modules expect globalThis.pdfjsLib to be set;
+    // import the SAME esm.sh instance PDFSlick's bundle uses so we can fix its workerSrc
+    const pdfjs = await import("https://esm.sh/pdfjs-dist@^6.0.227?target=es2022");
+    globalThis.pdfjsLib = pdfjs;
+    const { PDFSlick } = await import("https://esm.sh/@pdfslick/core@4.0.0?target=es2022");
+    // PDFSlick points workerSrc at a relative esm.sh path that 404s — use our vendored worker (same 6.2.x)
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdfjs/build/pdf.worker.mjs", location.href).href;
+    const container = document.getElementById("viewerContainer");
+    const slick = new PDFSlick({
+      container,
+      viewer: document.getElementById("viewer"),
+      options: { scaleValue: "page-fit" },
+    });
+    await slick.loadDocument(new URL("../assets/sample.pdf", location.href).href);
+  } catch (e) {
+    errbox.style.display = "block";
+    errbox.textContent = "PDFSlick failed to load from CDN (esm.sh):\n" + (e.stack || e) +
+      "\n\nThis is an exploration-site limitation (no bundler). In a real app PDFSlick is installed from npm and bundled.";
+  }
+</script>
+</body>
+</html>

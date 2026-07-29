@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF.js custom build — drawde PDF explorer</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  .demo-body { background: #2a2d36; padding: 1.5rem 0; }
+  .page-wrap {
+    position: relative; margin: 0 auto 1.25rem; width: fit-content;
+    box-shadow: 0 4px 18px rgba(0,0,0,.5); background: #fff;
+  }
+  .page-wrap canvas { display: block; }
+  /* minimal pdf.js v6 text layer css */
+  .textLayer {
+    position: absolute; inset: 0; overflow: hidden;
+    line-height: 1; text-size-adjust: none; forced-color-adjust: none;
+    transform-origin: 0 0; caret-color: CanvasText; z-index: 1;
+  }
+  .textLayer span, .textLayer br {
+    color: transparent; position: absolute; white-space: pre;
+    cursor: text; transform-origin: 0% 0%;
+  }
+  .textLayer ::selection { background: rgba(122, 162, 247, .45); }
+  /* region-select overlay */
+  .selLayer { position: absolute; inset: 0; z-index: 2; cursor: crosshair; display: none; }
+  body.region-mode .selLayer { display: block; }
+  .selRect {
+    position: absolute; border: 1.5px solid #f7768e;
+    background: rgba(247, 118, 142, .18); pointer-events: none;
+  }
+  #regionOut {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+    background: var(--panel); border-top: 1px solid var(--border);
+    font-family: monospace; font-size: .78rem; color: var(--green);
+    padding: .45rem 1rem; white-space: nowrap; overflow-x: auto;
+  }
+  .toggle { font-size: .8rem; }
+</style>
+</head>
+<body>
+<div class="demo-topbar">
+  <a href="../index.html">&larr; back</a>
+  <h1>PDF.js as a library (custom UI)</h1>
+  <div class="notes">Roll-your-own viewer on <code>pdfjs-dist</code>: canvas render + selectable text layer. Toggle <b>region select</b> and drag a box over an equation — this is the "highlight a gap" primitive drawde needs.</div>
+  <label class="toggle"><input type="checkbox" id="regionToggle"> region select</label>
+</div>
+<div class="demo-body" id="pages"></div>
+<div class="errbox" id="err"></div>
+<div id="regionOut">drag a region (enable "region select" first) &mdash; PDF-space coordinates will appear here</div>
+<script type="module">
+  const errbox = document.getElementById("err");
+  try {
+    const pdfjsLib = await import("../vendor/pdfjs/build/pdf.mjs");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "../vendor/pdfjs/build/pdf.worker.mjs";
+
+    const doc = await pdfjsLib.getDocument({ url: new URL("../assets/sample.pdf", location.href).href }).promise;
+    const container = document.getElementById("pages");
+    const SCALE = 1.4;
+
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n);
+      const viewport = page.getViewport({ scale: SCALE });
+
+      const wrap = document.createElement("div");
+      wrap.className = "page-wrap";
+      wrap.dataset.page = n;
+      wrap.style.width = viewport.width + "px";
+      wrap.style.height = viewport.height + "px";
+
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width * devicePixelRatio;
+      canvas.height = viewport.height * devicePixelRatio;
+      canvas.style.width = viewport.width + "px";
+      canvas.style.height = viewport.height + "px";
+      wrap.appendChild(canvas);
+
+      const textDiv = document.createElement("div");
+      textDiv.className = "textLayer";
+      textDiv.style.setProperty("--scale-factor", SCALE);
+      wrap.appendChild(textDiv);
+
+      const selLayer = document.createElement("div");
+      selLayer.className = "selLayer";
+      wrap.appendChild(selLayer);
+
+      container.appendChild(wrap);
+
+      await page.render({
+        canvasContext: canvas.getContext("2d"),
+        viewport,
+        transform: [devicePixelRatio, 0, 0, devicePixelRatio, 0, 0],
+      }).promise;
+
+      const textLayer = new pdfjsLib.TextLayer({
+        textContentSource: page.streamTextContent(),
+        container: textDiv,
+        viewport,
+      });
+      await textLayer.render();
+
+      // region-select: drag => rectangle => report PDF-space coords
+      let start = null, rect = null;
+      selLayer.addEventListener("pointerdown", (e) => {
+        start = { x: e.offsetX, y: e.offsetY };
+        rect = document.createElement("div");
+        rect.className = "selRect";
+        selLayer.appendChild(rect);
+        selLayer.setPointerCapture(e.pointerId);
+      });
+      selLayer.addEventListener("pointermove", (e) => {
+        if (!start) return;
+        const x = Math.min(start.x, e.offsetX), y = Math.min(start.y, e.offsetY);
+        const w = Math.abs(e.offsetX - start.x), h = Math.abs(e.offsetY - start.y);
+        Object.assign(rect.style, { left: x+"px", top: y+"px", width: w+"px", height: h+"px" });
+      });
+      selLayer.addEventListener("pointerup", (e) => {
+        if (!start) return;
+        const x1 = Math.min(start.x, e.offsetX), y1 = Math.min(start.y, e.offsetY);
+        const x2 = Math.max(start.x, e.offsetX), y2 = Math.max(start.y, e.offsetY);
+        // viewport (css px, top-left origin) -> PDF user space (pt, bottom-left origin)
+        const [px1, py1] = viewport.convertToPdfPoint(x1, y2);
+        const [px2, py2] = viewport.convertToPdfPoint(x2, y1);
+        document.getElementById("regionOut").textContent =
+          `page ${n}  |  viewport px: (${x1|0},${y1|0})→(${x2|0},${y2|0})  |  PDF pts: (${px1.toFixed(1)},${py1.toFixed(1)})→(${px2.toFixed(1)},${py2.toFixed(1)})  — feed this crop to the AI`;
+        start = null;
+        setTimeout(() => rect.remove(), 1500);
+      });
+    }
+  } catch (e) {
+    errbox.style.display = "block";
+    errbox.textContent = "Failed to load pdf.js custom demo:\n" + (e.stack || e);
+  }
+  document.getElementById("regionToggle").addEventListener("change", (e) => {
+    document.body.classList.toggle("region-mode", e.target.checked);
+  });
+</script>
+</body>
+</html>

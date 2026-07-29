@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDFObject — drawde PDF explorer</title>
+<link rel="stylesheet" href="../style.css">
+<script src="https://cdn.jsdelivr.net/npm/pdfobject@2.3.1/pdfobject.min.js"></script>
+</head>
+<body>
+<div class="demo-topbar">
+  <a href="../index.html">&larr; back</a>
+  <h1>PDFObject</h1>
+  <div class="notes">Tiny (~4&nbsp;kB) helper that feature-detects and embeds the <em>native</em> viewer with graceful fallback. Same limits as native — it's an embed utility, not a renderer.</div>
+</div>
+<div id="pdf-here" class="demo-body"></div>
+<div class="errbox" id="err"></div>
+<script>
+  const ok = PDFObject.embed("../assets/sample.pdf", "#pdf-here", { height: "100%" });
+  if (!ok) {
+    document.getElementById("err").style.display = "block";
+    document.getElementById("err").textContent = "PDFObject: this browser cannot display inline PDFs.";
+  }
+</script>
+</body>
+</html>

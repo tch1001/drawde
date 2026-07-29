@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EmbedPDF — drawde PDF explorer</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  #app { height: calc(100vh - 52px); }
+</style>
+</head>
+<body>
+<div class="demo-topbar">
+  <a href="../index.html">&larr; back</a>
+  <h1>EmbedPDF (open source, PDFium-based)</h1>
+  <div class="notes">Newer MIT-licensed viewer built on a PDFium WASM engine; plugin architecture (zoom, search, annotations…). Loaded here via their CDN snippet build.</div>
+</div>
+<div id="app"></div>
+<div class="errbox" id="err"></div>
+<script type="module">
+  const errbox = document.getElementById("err");
+  try {
+    const { default: EmbedPDF } = await import("https://snippet.embedpdf.com/embedpdf.js");
+    EmbedPDF.init({
+      type: "container",
+      target: document.getElementById("app"),
+      src: new URL("../assets/sample.pdf", location.href).href,
+    });
+  } catch (e) {
+    errbox.style.display = "block";
+    errbox.textContent = "EmbedPDF snippet failed to load:\n" + (e.stack || e);
+  }
+</script>
+</body>
+</html>

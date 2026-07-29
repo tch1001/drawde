@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>probe</title></head>
+<body>
+<div id="pdf-viewer" style="height:100vh"></div>
+<script type="module">
+  import EmbedPDF from 'https://cdn.jsdelivr.net/npm/@embedpdf/snippet@2/dist/embedpdf.js';
+  const viewer = EmbedPDF.init({
+    type: 'container',
+    target: document.getElementById('pdf-viewer'),
+    theme: { preference: 'dark' },
+    documentManager: { initialDocuments: [{ url: './sample.pdf', documentId: 'doc' }] },
+  });
+  window.__viewer = viewer;
+  window.__registry = await viewer.registry;
+  window.__ready = true;
+</script>
+</body></html>
