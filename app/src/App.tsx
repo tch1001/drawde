@@ -20,7 +20,7 @@ import {
   SelectionPluginPackage,
   useSelectionCapability,
 } from '@embedpdf/plugin-selection/react';
-import { ZoomPluginPackage, useZoom, useZoomCapability } from '@embedpdf/plugin-zoom/react';
+import { ZoomPluginPackage, useZoom, useZoomCapability, ZoomGestureWrapper } from '@embedpdf/plugin-zoom/react';
 import { BookmarkPluginPackage } from '@embedpdf/plugin-bookmark/react';
 import { useScrollCapability, useScroll } from '@embedpdf/plugin-scroll/react';
 import { TilingLayer, TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
@@ -30,7 +30,7 @@ import { BoxSelectLayer } from './BoxSelectLayer';
 import { SelectionPanel } from './SelectionPanel';
 import { Sidebar } from './Sidebar';
 import { SearchBar } from './SearchBar';
-import { PanPluginPackage, usePan } from '@embedpdf/plugin-pan/react';
+import { PanPluginPackage } from '@embedpdf/plugin-pan/react';
 import { selectionMode, useSelectionMode } from './selection-mode';
 import { PAN_MODE } from './modes';
 import { BOX_MODE, TEXT_MODE } from './modes';
@@ -52,13 +52,17 @@ const plugins = [
   // wiping zoomRanges/minZoom/maxZoom, and scroll layout then never emits (blank viewer).
   createPluginRegistration(ZoomPluginPackage),
   createPluginRegistration(BookmarkPluginPackage),
-  // tiling keeps the previous render on screen while high-res tiles refine on top,
-  // which is what removes the flash when zooming
-  createPluginRegistration(TilingPluginPackage, { tileSize: 768, overlapPx: 2, extraRings: 1 }),
+  // Tiling keeps the previous render on screen while high-res tiles refine on
+  // top. extraRings stays at 0 (the package default): pre-rendering a ring of
+  // off-screen tiles multiplies bitmap memory, and iOS Safari kills the tab
+  // rather than degrading when it runs out.
+  createPluginRegistration(TilingPluginPackage, { tileSize: 768, overlapPx: 2.5, extraRings: 0 }),
   createPluginRegistration(SearchPluginPackage),
-  // defaultMode 'mobile' is the plugin default: pan is the default tool on touch
-  // devices, so a phone scrolls/pinches naturally until a select tool is chosen.
-  createPluginRegistration(PanPluginPackage),
+  // 'never' overrides the package default of 'mobile': pan must not claim the
+  // default tool on touch — Region is the default everywhere (see
+  // ModeController). Pan is one tap away. Safe to pass partially: defaultMode
+  // is this config's only field, unlike the zoom plugin above.
+  createPluginRegistration(PanPluginPackage, { defaultMode: 'never' }),
 ];
 
 /**
@@ -137,7 +141,12 @@ function ModeController({
   onToggleSidebar: () => void;
 }) {
   const { provides: interaction } = useInteractionManagerCapability();
-  const [mode, setMode] = useState<string>(TEXT_MODE);
+  const [mode, setMode] = useState<string>(BOX_MODE);
+  const isMobile = useIsMobile();
+  // Desktop already pans with the scroll wheel, so the hand tool is noise there.
+  // On touch, dragging out a text selection is fiddly and Region is the point.
+  const showPan = isMobile;
+  const showText = !isMobile;
 
   useEffect(() => {
     if (!interaction) return;
@@ -149,6 +158,11 @@ function ModeController({
     });
     // keep our own chrome from swallowing page pointer events
     interaction.addExclusionClass('dd-no-interaction');
+    // Region is drawde's primary gesture, so it's the default tool on every
+    // device — set as the default (not just activated) so anything that calls
+    // activateDefaultMode() lands back here rather than on text selection.
+    interaction.setDefaultMode(BOX_MODE);
+    interaction.activate(BOX_MODE);
     return interaction.onModeChange((s: { activeMode: string }) => setMode(s.activeMode));
   }, [interaction]);
 
@@ -179,6 +193,15 @@ function ModeController({
     return () => window.removeEventListener('keydown', onKey);
   }, [interaction]);
 
+  // Crossing the breakpoint can strand you in a tool whose button just
+  // disappeared (text on mobile, pan on desktop) — fall back to Region.
+  useEffect(() => {
+    if (!interaction) return;
+    const stranded =
+      (isMobile && mode === TEXT_MODE) || (!isMobile && mode === PAN_MODE);
+    if (stranded) interaction.activate(BOX_MODE);
+  }, [interaction, isMobile, mode]);
+
   const tool =
     mode === BOX_MODE ? 'box' : mode === PAN_MODE ? 'pan' : 'text';
 
@@ -194,14 +217,16 @@ function ModeController({
       </button>
 
       <div className="dd-tools">
-        <button
-          className={`dd-mode ${tool === 'pan' ? 'on' : ''}`}
-          onClick={() => interaction?.activate(PAN_MODE)}
-          title="Pan & zoom (H)"
-        >
-          <span className="dd-ico">✋</span>
-          <span className="dd-lbl">Pan <kbd>H</kbd></span>
-        </button>
+        {showPan && (
+          <button
+            className={`dd-mode ${tool === 'pan' ? 'on' : ''}`}
+            onClick={() => interaction?.activate(PAN_MODE)}
+            title="Pan & zoom (H)"
+          >
+            <span className="dd-ico">✋</span>
+            <span className="dd-lbl">Pan <kbd>H</kbd></span>
+          </button>
+        )}
         <button
           className={`dd-mode ${tool === 'box' ? 'on' : ''}`}
           onClick={() => interaction?.activate(BOX_MODE)}
@@ -210,14 +235,16 @@ function ModeController({
           <span className="dd-ico">▭</span>
           <span className="dd-lbl">Region <kbd>R</kbd></span>
         </button>
-        <button
-          className={`dd-mode ${tool === 'text' ? 'on' : ''}`}
-          onClick={() => interaction?.activate(TEXT_MODE)}
-          title="Select text (T)"
-        >
-          <span className="dd-ico">T</span>
-          <span className="dd-lbl">Text <kbd>T</kbd></span>
-        </button>
+        {showText && (
+          <button
+            className={`dd-mode ${tool === 'text' ? 'on' : ''}`}
+            onClick={() => interaction?.activate(TEXT_MODE)}
+            title="Select text (T)"
+          >
+            <span className="dd-ico">T</span>
+            <span className="dd-lbl">Text <kbd>T</kbd></span>
+          </button>
+        )}
         <LockSelectionButton />
       </div>
 
@@ -381,14 +408,25 @@ function TextSelectionBridge({ documentId }: { documentId: string }) {
   return null;
 }
 
-/**
- * Ctrl/Cmd + wheel to zoom, centred on the cursor.
+/*
+ * Zoom gesture split:
+ *   - PINCH  → EmbedPDF's <ZoomGestureWrapper> (smooth CSS-transform preview)
+ *   - WHEEL  → CtrlWheelZoom below, because the wrapper's wheel sensitivity is
+ *              not configurable and is far too hot for a mouse.
  *
- * Done by hand rather than with EmbedPDF's ZoomGestureWrapper: that component renders
- * nothing in this composition (it silently swallowed the whole Viewport subtree), and a
- * plain wheel listener gives us the cursor-centred behaviour with no layout risk.
- * Must be non-passive so preventDefault() can stop the browser's page zoom.
+ * Background: applying zoom on every wheel event is what produced the visible
+ * "screen moves twice" — each requestZoomBy re-renders pages at the new scale on
+ * one frame and corrects scroll on the *next*, and a trackpad fires that dozens
+ * of times per gesture. So this handler accumulates deltas and commits ONCE when
+ * the gesture goes quiet, giving a single clean move.
+ *
+ * The wrapper's own wheel path is disabled (enableWheel={false}). Its factor is
+ * `1 - deltaY * 0.01`, which turns one mouse notch (deltaY ~120) into a 2.2x
+ * jump; WHEEL_SENSITIVITY below is ~8x gentler.
  */
+const WHEEL_SENSITIVITY = 0.0012;
+const WHEEL_COMMIT_MS = 90;
+
 function CtrlWheelZoom({ documentId }: { documentId: string }) {
   const { provides: zoom } = useZoomCapability();
 
@@ -398,20 +436,35 @@ function CtrlWheelZoom({ documentId }: { documentId: string }) {
     if (!el) return;
     const scoped = zoom.forDocument(documentId);
 
+    let accumulated = 0;
+    let center: { vx: number; vy: number } | undefined;
+    let timer: number | undefined;
+
+    const commit = () => {
+      timer = undefined;
+      const step = Math.max(-0.6, Math.min(0.6, accumulated));
+      accumulated = 0;
+      if (step) scoped.requestZoomBy(step, center);
+    };
+
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
+      // must be non-passive, or the browser zooms the whole page as well
       e.preventDefault();
       const r = el.getBoundingClientRect();
-      // NB: the zoom plugin's Point is {vx, vy}, NOT {x, y}. Passing x/y leaves vx/vy
-      // undefined, the scroll-preservation math goes NaN, and the viewer jumps to page 1.
-      const center = { vx: e.clientX - r.left, vy: e.clientY - r.top };
-      // trackpads report fine-grained deltas; clamp so one notch is a sane step
-      const step = Math.max(-0.25, Math.min(0.25, -e.deltaY * 0.003));
-      scoped.requestZoomBy(step, center);
+      // NB: the zoom plugin's Point is {vx, vy}, NOT {x, y}. Passing x/y leaves
+      // vx/vy undefined, the scroll math goes NaN, and the viewer jumps to page 1.
+      center = { vx: e.clientX - r.left, vy: e.clientY - r.top };
+      accumulated += -e.deltaY * WHEEL_SENSITIVITY;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(commit, WHEEL_COMMIT_MS);
     };
 
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      window.clearTimeout(timer);
+    };
   }, [zoom, documentId]);
 
   return null;
@@ -476,13 +529,30 @@ function Splitter({
  * bitmap per page, which is a bad trade on phones when tiles cover detail.
  */
 const BASE_SCALE_LADDER = [1, 1.5, 2];
+
+/**
+ * Rendered pixels = pageSize x baseScale x dpr, and that product is a hard
+ * ceiling on iOS Safari, which kills the tab rather than failing the draw.
+ * A letter page at baseScale 2 on a dpr-3 phone is 3672x4752 = 17.4M px,
+ * past Safari's per-canvas limit — which is what made zooming past 100%
+ * crash there. Budget the PRODUCT, not either factor alone.
+ */
+const MAX_RENDER_DPR = 2;
+const MAX_BASE_PIXEL_SCALE = 2;
+
+export function renderDpr() {
+  return Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
+}
+
 function useBaseScale(documentId: string) {
   const documentState = useDocumentState(documentId);
   const scale = documentState?.scale ?? 1;
-  return (
-    BASE_SCALE_LADDER.find((rung) => rung >= scale) ??
-    BASE_SCALE_LADDER[BASE_SCALE_LADDER.length - 1]
-  );
+  const rung =
+    BASE_SCALE_LADDER.find((r) => r >= scale) ??
+    BASE_SCALE_LADDER[BASE_SCALE_LADDER.length - 1];
+  // On a retina screen the dpr already supplies the detail, so the ladder
+  // collapses to 1 and the tiling layer covers sharpness at high zoom.
+  return Math.max(1, Math.min(rung, MAX_BASE_PIXEL_SCALE / renderDpr()));
 }
 
 /**
@@ -497,6 +567,9 @@ function BaseRender({ documentId, pageIndex }: { documentId: string; pageIndex: 
       documentId={documentId}
       pageIndex={pageIndex}
       scale={baseScale}
+      // explicit dpr: RenderLayer otherwise uses the raw devicePixelRatio,
+      // which is 3 on modern phones and blows the iOS canvas budget
+      dpr={renderDpr()}
       draggable={false}
       style={{ WebkitUserDrag: 'none', userSelect: 'none' } as any}
     />
@@ -649,6 +722,12 @@ export default function App() {
 
                     <div className="dd-viewer">
                       <Viewport documentId={activeDocumentId} className="dd-viewport">
+                        {/* pinch only — wheel is handled by CtrlWheelZoom so the
+                            sensitivity is tunable (see its comment) */}
+                        <ZoomGestureWrapper
+                          documentId={activeDocumentId}
+                          enableWheel={false}
+                        >
                         <Scroller
                           documentId={activeDocumentId}
                           renderPage={({ pageIndex }: { pageIndex: number }) => (
@@ -686,6 +765,7 @@ export default function App() {
                             </PagePointerProvider>
                           )}
                         />
+                        </ZoomGestureWrapper>
                       </Viewport>
                       <TextSelectionBridge documentId={activeDocumentId} />
                       <NavHost documentId={activeDocumentId} />

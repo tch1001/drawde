@@ -1,57 +1,80 @@
 /**
- * drawde viewer — regression suite.
+ * drawde viewer — Playwright regression suite.
  *
- * HARD RULE FOR THIS FILE: every gesture must go through Playwright's real input
- * pipeline — `page.mouse.*` / `page.keyboard.*`, which drive Chromium's native
- * input queue (CDP Input.dispatch*Event). NEVER `page.evaluate()` a synthetic
- * PointerEvent: synthetic events skip pointer capture, native image/text drag,
- * default-prevention and hit-testing, which is exactly the class of bug this
- * suite exists to catch. `page.evaluate` is used ONLY to read state, never to
- * simulate input.
+ * ══════════════════════════════════════════════════════════════════════════
+ * HARD RULE FOR THIS FILE: every gesture goes through Playwright's REAL input
+ * pipeline — `page.mouse.*`, `page.keyboard.*`, `locator.tap()`, which drive
+ * Chromium's native input queue via CDP `Input.dispatch*Event`.
+ *
+ * NEVER `page.evaluate()` a synthetic PointerEvent. Synthetic events skip
+ * pointer capture, hit-testing, default-prevention and — crucially — the
+ * browser's native image/text drag. A shipped bug (the native HTML5 image drag
+ * firing `dragstart` and CANCELLING the pointer stream, killing box drawing)
+ * passed a synthetic-event suite and failed on every real mouse. `evaluate` is
+ * used here ONLY to READ computed style / DOM state, never to simulate input.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect, devices, type Page, type Locator } from '@playwright/test';
 
-/* ────────────────────────────── geometry ──────────────────────────────
- * All drag coordinates are expressed relative to the top-left of page 0's
- * overlay layer (`.dd-layer`, which is inset:0 over the page image), so they
- * survive layout/zoom changes. sample.pdf is 612x792pt rendered at scale 1.
+/* ───────────────────────────── geometry ─────────────────────────────
+ * Drag coordinates are expressed relative to the top-left of a page's overlay
+ * layer (`.dd-layer`, which is `inset: 0` over the page bitmap), so they are
+ * independent of sidebar width / scroll position.
+ * sample.pdf is Maldacena hep-th/9711200: 22 pages of 612x792pt, rendered 1:1
+ * at 100% zoom, so these numbers are also PDF points.
  */
 type Pt = { dx: number; dy: number };
+type Span = [Pt, Pt];
 
-/** Blank-ish area under the title — a clean box target. */
-const BOX_A: [Pt, Pt] = [{ dx: 100, dy: 180 }, { dx: 400, dy: 240 }];
-/** A second, clearly different box target. */
-const BOX_B: [Pt, Pt] = [{ dx: 130, dy: 300 }, { dx: 380, dy: 350 }];
+/** Title block — blank-ish, a clean box target. */
+const BOX_A: Span = [
+  { dx: 100, dy: 180 },
+  { dx: 400, dy: 240 },
+];
+/** Author / affiliation band — a clearly different second box target. */
+const BOX_B: Span = [
+  { dx: 130, dy: 300 },
+  { dx: 380, dy: 350 },
+];
 /**
- * Along the 2nd line of the Abstract ("…include in their Hilbert space…").
- * MUST start ON a glyph: EmbedPDF's selection plugin only begins a *text*
- * selection when pointerdown hits a glyph; starting in whitespace silently
- * falls through to its marquee handler instead (see tests/README.md).
+ * Abstract line 2 ("sions include in their Hilbert space a sector describing…").
+ * MUST start ON a glyph: EmbedPDF's selection plugin only begins a text
+ * selection when pointerdown hits a glyph run; starting in the margin falls
+ * through to its marquee handler and silently selects nothing.
  */
-const TEXT_A: [Pt, Pt] = [{ dx: 150, dy: 415 }, { dx: 430, dy: 417 }];
-
-/* ────────────────────────────── helpers ────────────────────────────── */
-
-const NOISE = [
-  /\[vite\]/i,
-  /Download the React DevTools/i,
-  /favicon/i,
+const TEXT_A: Span = [
+  { dx: 100, dy: 415 },
+  { dx: 430, dy: 417 },
+];
+/** Abstract line 3 — a second, non-overlapping text target. */
+const TEXT_B: Span = [
+  { dx: 100, dy: 436 },
+  { dx: 430, dy: 438 },
 ];
 
-/** Navigate, wait for PDFium + first page bitmap, and collect console errors. */
+/* ───────────────────────────── helpers ───────────────────────────── */
+
+/** Console output that is expected in a vite dev build and is not a defect. */
+const CONSOLE_NOISE = [/\[vite\]/i, /Download the React DevTools/i, /favicon/i];
+
+/**
+ * Navigate, wait for the PDFium engine + document + first page bitmap, and
+ * return the list of console errors collected from the very first navigation.
+ */
 async function boot(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
     const t = msg.text();
-    if (NOISE.some((re) => re.test(t))) return;
+    if (CONSOLE_NOISE.some((re) => re.test(t))) return;
     errors.push(`console.error: ${t}`);
   });
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-  // PDFium engine + document load gate the whole app shell.
+  // `.dd-app` only mounts once the WASM engine AND the document have loaded —
+  // before that it is the `.dd-boot` spinner.
   await page.waitForSelector('.dd-app', { timeout: 90_000 });
 
   // First page actually painted: RenderLayer emits an <img> with a blob: URL.
@@ -76,19 +99,22 @@ async function pageBox(page: Page, pageIndex = 0) {
   return box;
 }
 
-function abs(box: { x: number; y: number }, p: Pt) {
-  return { x: box.x + p.dx, y: box.y + p.dy };
-}
+const abs = (box: { x: number; y: number }, p: Pt) => ({ x: box.x + p.dx, y: box.y + p.dy });
 
 /**
- * A REAL mouse drag. Uses the native input queue, with intermediate moves so
- * pointermove actually fires and React has time to re-render the preview.
+ * A REAL mouse drag on the native input queue, with intermediate moves so
+ * `pointermove` genuinely fires and React gets frames to render the preview.
+ *
+ * `holdShiftMs` keeps Shift down after mouseup. The text-selection path reads
+ * the additive flag inside an async `getSelectedText().wait()` callback, so a
+ * human's "release shift the instant the button comes up" is a real race — see
+ * tests/README.md. 0 is the default; the mixing test uses a small hold.
  */
 async function realDrag(
   page: Page,
   from: { x: number; y: number },
   to: { x: number; y: number },
-  opts: { shift?: boolean; steps?: number } = {},
+  opts: { shift?: boolean; steps?: number; holdShiftMs?: number } = {},
 ) {
   const steps = opts.steps ?? 14;
   if (opts.shift) await page.keyboard.down('Shift');
@@ -102,70 +128,147 @@ async function realDrag(
     }
     await page.waitForTimeout(30);
     await page.mouse.up();
+    if (opts.shift && opts.holdShiftMs) await page.waitForTimeout(opts.holdShiftMs);
   } finally {
     if (opts.shift) await page.keyboard.up('Shift');
   }
   await page.waitForTimeout(120);
 }
 
-/** Drag expressed in page-0-relative coordinates. */
-async function dragOnPage(page: Page, span: [Pt, Pt], opts: { shift?: boolean } = {}) {
-  const box = await pageBox(page);
+/** Drag expressed in page-relative coordinates. */
+async function dragOnPage(
+  page: Page,
+  span: Span,
+  opts: { shift?: boolean; holdShiftMs?: number; pageIndex?: number } = {},
+) {
+  const box = await pageBox(page, opts.pageIndex ?? 0);
   await realDrag(page, abs(box, span[0]), abs(box, span[1]), opts);
 }
 
-async function setMode(page: Page, key: 'r' | 't') {
+/**
+ * Toolbar buttons, addressed by their (stable) title rather than by index —
+ * `.dd-tools .dd-mode` also contains the lock toggle, and the order has already
+ * changed once when pan mode was added.
+ */
+const tool = (page: Page, which: 'pan' | 'region' | 'text') =>
+  page.locator(
+    which === 'pan'
+      ? '.dd-mode[title^="Pan"]'
+      : which === 'region'
+        ? '.dd-mode[title^="Select a region"]'
+        : '.dd-mode[title^="Select text"]',
+  );
+
+const lockBtn = (page: Page) => page.locator('.dd-lock');
+
+/**
+ * Persistent selection rectangles. The in-flight preview shares `.dd-rect`, so
+ * it is excluded. NB: BoxSelectLayer draws a `.dd-rect` for EVERY region on the
+ * page, text ones included — so this counts regions, not just box regions.
+ */
+const rects = (page: Page): Locator => page.locator('.dd-rect:not(.dd-rect-preview)');
+const cards = (page: Page): Locator => page.locator('.dd-card');
+
+/** Press a mode key and assert the matching toolbar button lights up. */
+async function setMode(page: Page, key: 'r' | 't' | 'h') {
+  const which = key === 'r' ? 'region' : key === 't' ? 'text' : 'pan';
   await page.keyboard.press(key);
-  const btn = page.locator('.dd-mode').nth(key === 'r' ? 0 : 1);
-  await expect(btn).toHaveClass(/\bon\b/);
+  await expect(tool(page, which)).toHaveClass(/\bon\b/);
 }
 
-/** Persistent rectangles only — the in-flight preview shares the .dd-rect class. */
-function rects(page: Page): Locator {
-  return page.locator('.dd-rect:not(.dd-rect-preview)');
-}
-function cards(page: Page): Locator {
-  return page.locator('.dd-card');
+const zoomPct = async (page: Page) => {
+  const txt = (await page.locator('.dd-zoom > span').first().textContent()) ?? '';
+  return parseInt(txt.replace('%', ''), 10);
+};
+const zoomOut = (page: Page) => page.locator('.dd-zoom button').nth(0);
+const zoomIn = (page: Page) => page.locator('.dd-zoom button').nth(1);
+const currentPage = async (page: Page) =>
+  parseInt(await page.locator('.dd-pageinput').inputValue(), 10);
+
+/** Type a page number into the page pill and commit it. */
+async function gotoPage(page: Page, n: number) {
+  const input = page.locator('.dd-pageinput');
+  await input.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type(String(n));
+  await page.keyboard.press('Enter');
+  await expect(input).toHaveValue(String(n));
 }
 
-/* ────────────────────────────── tests ────────────────────────────── */
+const cssOf = (loc: Locator, prop: string) =>
+  loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
 
-test.describe('drawde viewer', () => {
-  test('1 · boots: PDFium loads, first page renders, no console errors', async ({ page }) => {
+/**
+ * Phone emulation: real touch (`hasTouch`), mobile UA, dpr 3, 390x844.
+ *
+ * `defaultBrowserType` is stripped deliberately — Playwright refuses a
+ * `test.use({ defaultBrowserType })` inside a describe ("forces a new worker"),
+ * and the config already pins chromium.
+ */
+const { defaultBrowserType: _ignored, ...PIXEL_5 } = devices['Pixel 5'];
+
+/* ══════════════════════════════════════════════════════════════════════
+   DESKTOP
+   ══════════════════════════════════════════════════════════════════════ */
+
+test.describe('desktop · boot & modes', () => {
+  test('1 · boots: PDFium engine loads, first page renders, no console errors', async ({
+    page,
+  }) => {
     const errors = await boot(page);
+
+    // the boot spinner is gone, i.e. engine + document both resolved
+    await expect(page.locator('.dd-boot')).toHaveCount(0);
 
     const img = page.locator('.dd-viewport img').first();
     await expect(img).toBeVisible();
     const natural = await img.evaluate((el: HTMLImageElement) => el.naturalWidth);
-    expect(natural).toBeGreaterThan(100);
+    expect(natural, 'first page bitmap did not decode').toBeGreaterThan(100);
 
+    // 22-page sample: the page pill knows the page count, so scroll state is live
+    await expect(page.locator('.dd-pageind')).toContainText('/ 22');
     await expect(page.locator('.dd-panel')).toBeVisible();
-    await expect(page.locator('.dd-mode')).toHaveCount(2);
+    await expect(page.locator('.dd-sidebar')).toBeVisible();
 
-    // give async plugin work a beat to surface any late errors
-    await page.waitForTimeout(1000);
+    // let late async plugin work (thumbnails, tiles) surface any deferred errors
+    await page.waitForTimeout(1500);
     expect(errors, `unexpected console errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
-  test('2 · pressing R activates region mode', async ({ page }) => {
+  test('2 · R / T switch tool and light the matching toolbar button', async ({ page }) => {
     await boot(page);
-    const region = page.locator('.dd-mode').nth(0);
-    await expect(region).not.toHaveClass(/\bon\b/);
-    await page.keyboard.press('r');
-    await expect(region).toHaveClass(/\bon\b/);
-    await expect(page.locator('.dd-mode').nth(1)).not.toHaveClass(/\bon\b/);
-  });
 
-  test('3 · pressing T activates text mode', async ({ page }) => {
-    await boot(page);
-    await page.keyboard.press('r');
-    await expect(page.locator('.dd-mode').nth(0)).toHaveClass(/\bon\b/);
-    await page.keyboard.press('t');
-    await expect(page.locator('.dd-mode').nth(1)).toHaveClass(/\bon\b/);
-    await expect(page.locator('.dd-mode').nth(0)).not.toHaveClass(/\bon\b/);
-  });
+    // Region is the default tool on every device (ModeController calls
+    // setDefaultMode(BOX_MODE) + activate(BOX_MODE) once the manager is up).
+    await expect(tool(page, 'region')).toHaveClass(/\bon\b/);
 
-  test('4 · region drag draws a rect at the dragged coords and yields a crop card', async ({
+    await setMode(page, 't');
+    await expect(tool(page, 'region')).not.toHaveClass(/\bon\b/);
+
+    await setMode(page, 'r');
+    await expect(tool(page, 'text')).not.toHaveClass(/\bon\b/);
+
+    // and the buttons themselves work, not just the keys
+    await tool(page, 'text').click();
+    await expect(tool(page, 'text')).toHaveClass(/\bon\b/);
+    await tool(page, 'region').click();
+    await expect(tool(page, 'region')).toHaveClass(/\bon\b/);
+
+    // Pan is a TOUCH-ONLY tool: the button is `showPan = isMobile`, and a
+    // `stranded` effect in ModeController bounces you straight back to Region if
+    // you press H on a desktop viewport. Assert that contract rather than
+    // pretending a Pan button exists here. (H → pan is covered by test 2b.)
+    await expect(tool(page, 'pan')).toHaveCount(0);
+    await page.keyboard.press('h');
+    await page.waitForTimeout(300);
+    await expect(tool(page, 'region'), 'H stranded the desktop user in a toolless mode').toHaveClass(
+      /\bon\b/,
+    );
+  });
+});
+
+test.describe('desktop · region selection', () => {
+  test('3 · a real mouse drag draws a rect at the dragged coords and yields a crop card', async ({
     page,
   }) => {
     await boot(page);
@@ -178,25 +281,32 @@ test.describe('drawde viewer', () => {
 
     await expect(rects(page)).toHaveCount(1);
 
-    // geometry: the persistent rect must land where the mouse actually went.
+    // Geometry: the persistent rect must land where the mouse actually went.
+    // `box-sizing: border-box` is global, so the 1.5px border is inside the box.
     const drawn = await rects(page).first().boundingBox();
     expect(drawn, 'rect has no layout box').not.toBeNull();
-    const TOL = 6; // 1.5px border on each side + rounding
-    expect(Math.abs(drawn!.x - Math.min(from.x, to.x))).toBeLessThanOrEqual(TOL);
-    expect(Math.abs(drawn!.y - Math.min(from.y, to.y))).toBeLessThanOrEqual(TOL);
-    expect(Math.abs(drawn!.width - Math.abs(to.x - from.x))).toBeLessThanOrEqual(TOL);
-    expect(Math.abs(drawn!.height - Math.abs(to.y - from.y))).toBeLessThanOrEqual(TOL);
+    const TOL = 3;
+    expect(Math.abs(drawn!.x - Math.min(from.x, to.x)), 'rect x').toBeLessThanOrEqual(TOL);
+    expect(Math.abs(drawn!.y - Math.min(from.y, to.y)), 'rect y').toBeLessThanOrEqual(TOL);
+    expect(Math.abs(drawn!.width - Math.abs(to.x - from.x)), 'rect width').toBeLessThanOrEqual(TOL);
+    expect(Math.abs(drawn!.height - Math.abs(to.y - from.y)), 'rect height').toBeLessThanOrEqual(
+      TOL,
+    );
 
-    // the panel card, and its async high-DPI crop
+    // the panel card, and its async high-DPI crop (CROP_SCALE = 4)
     await expect(cards(page)).toHaveCount(1);
     await expect(page.locator('.dd-card .dd-kind-box')).toHaveCount(1);
     const crop = page.locator('.dd-card .dd-crop');
     await expect(crop).toBeVisible({ timeout: 30_000 });
-    const cropW = await crop.evaluate((el: HTMLImageElement) => el.naturalWidth);
-    expect(cropW, 'crop image did not decode').toBeGreaterThan(0);
+    await expect
+      .poll(() => crop.evaluate((el: HTMLImageElement) => el.naturalWidth), {
+        timeout: 30_000,
+        message: 'crop image never decoded',
+      })
+      .toBeGreaterThan(0);
   });
 
-  test('5 · plain drag REPLACES the selection (2 drags → 1 region)', async ({ page }) => {
+  test('4 · plain drag REPLACES the selection (2 drags → 1 region)', async ({ page }) => {
     await boot(page);
     await setMode(page, 'r');
 
@@ -209,7 +319,7 @@ test.describe('drawde viewer', () => {
     await expect(page.locator('.dd-count')).toHaveText('1');
   });
 
-  test('6 · shift-drag ADDS to the selection (plain + shift → 2 regions)', async ({ page }) => {
+  test('5 · shift-drag ADDS to the selection (plain + shift → 2 regions)', async ({ page }) => {
     await boot(page);
     await setMode(page, 'r');
 
@@ -222,7 +332,7 @@ test.describe('drawde viewer', () => {
     await expect(page.locator('.dd-count')).toHaveText('2');
   });
 
-  test('7 · clicking the ✕ on a rect removes it and its panel card', async ({ page }) => {
+  test('6 · clicking a rect ✕ removes that rectangle and its panel card', async ({ page }) => {
     await boot(page);
     await setMode(page, 'r');
 
@@ -231,13 +341,13 @@ test.describe('drawde viewer', () => {
     await expect(rects(page)).toHaveCount(2);
     await expect(cards(page)).toHaveCount(2);
 
-    // panel meta is positional ("#1 · p.1"), so identify survivors by geometry
+    // Card meta is positional ("#1 · p.1"), so identify survivors by geometry.
     const before = await rects(page).evaluateAll((els) =>
       els.map((el) => (el as HTMLElement).style.cssText),
     );
     expect(before).toHaveLength(2);
 
-    // real click on the ✕ of the FIRST rect
+    // a real click on the ✕ of the FIRST rect
     await page.locator('.dd-rect-x').first().click();
 
     await expect(rects(page)).toHaveCount(1);
@@ -249,8 +359,12 @@ test.describe('drawde viewer', () => {
     );
     expect(after, 'the wrong rectangle was removed').toEqual([before[1]]);
   });
+});
 
-  test('8 · text drag produces a text card with non-empty text', async ({ page }) => {
+test.describe('desktop · text selection & mixing', () => {
+  test('7 · a real drag across a line of text produces a text card with non-empty text', async ({
+    page,
+  }) => {
     await boot(page);
     await setMode(page, 't');
 
@@ -262,22 +376,24 @@ test.describe('drawde viewer', () => {
     expect(text.trim().length, `text card was empty: ${JSON.stringify(text)}`).toBeGreaterThan(3);
   });
 
-  test('9 · a box region and a shift-held text selection coexist', async ({ page }) => {
+  test('8 · a box region and a shift-held text selection coexist', async ({ page }) => {
     await boot(page);
 
     await setMode(page, 'r');
     await dragOnPage(page, BOX_A);
-    await expect(page.locator('.dd-kind-box')).toHaveCount(1);
+    await expect(page.locator('.dd-card .dd-kind-box')).toHaveCount(1);
 
     await setMode(page, 't');
-    await dragOnPage(page, TEXT_A, { shift: true });
+    // Shift is held 250ms past mouseup: the text bridge samples the additive
+    // flag inside an async getSelectedText() callback. See tests/README.md.
+    await dragOnPage(page, TEXT_A, { shift: true, holdShiftMs: 250 });
 
+    await expect(cards(page)).toHaveCount(2);
     await expect(page.locator('.dd-card .dd-kind-box')).toHaveCount(1);
     await expect(page.locator('.dd-card .dd-kind-text')).toHaveCount(1);
-    await expect(cards(page)).toHaveCount(2);
   });
 
-  test('10 · Escape clears all selections', async ({ page }) => {
+  test('9 · Escape clears all selections', async ({ page }) => {
     await boot(page);
 
     await setMode(page, 'r');
@@ -290,5 +406,252 @@ test.describe('drawde viewer', () => {
     await expect(cards(page)).toHaveCount(0);
     await expect(rects(page)).toHaveCount(0);
     await expect(page.locator('.dd-empty')).toBeVisible();
+  });
+});
+
+test.describe('desktop · selection lock', () => {
+  test('10 · the lock toggle makes plain drags additive, and Shift shows as via-shift', async ({
+    page,
+  }) => {
+    await boot(page);
+    await setMode(page, 'r');
+
+    const lock = lockBtn(page);
+    await expect(lock).not.toHaveClass(/\bon\b/);
+
+    // ── holding Shift lights the same button, momentarily (dashed = via-shift)
+    await page.keyboard.down('Shift');
+    await expect(lock).toHaveClass(/\bvia-shift\b/);
+    await expect(lock).toHaveClass(/\bon\b/);
+    await page.keyboard.up('Shift');
+    await expect(lock).not.toHaveClass(/\bvia-shift\b/);
+    await expect(lock).not.toHaveClass(/\bon\b/);
+
+    // ── locked: two PLAIN drags (no shift at all) must both stick
+    await lock.click();
+    await expect(lock).toHaveClass(/\bon\b/);
+    await expect(lock).not.toHaveClass(/\bvia-shift\b/);
+
+    await dragOnPage(page, BOX_A);
+    await expect(rects(page)).toHaveCount(1);
+    await dragOnPage(page, BOX_B);
+    await expect(rects(page)).toHaveCount(2);
+    await expect(cards(page)).toHaveCount(2);
+
+    // ── unlocked again: replace behaviour is restored
+    await lock.click();
+    await expect(lock).not.toHaveClass(/\bon\b/);
+    await dragOnPage(page, BOX_A);
+    await expect(rects(page)).toHaveCount(1);
+    await expect(cards(page)).toHaveCount(1);
+  });
+});
+
+test.describe('desktop · zoom, paging & search', () => {
+  test('11 · zoom buttons change the percentage and do NOT jump back to page 1', async ({
+    page,
+  }) => {
+    await boot(page);
+
+    await gotoPage(page, 10);
+    const before = await currentPage(page);
+    expect(before).toBe(10);
+    const pctBefore = await zoomPct(page);
+    expect(pctBefore).toBeGreaterThan(0);
+
+    await zoomIn(page).click();
+    await expect
+      .poll(() => zoomPct(page), { message: 'zoom % did not increase' })
+      .toBeGreaterThan(pctBefore);
+    // the real regression: NaN in the scroll-preservation math sends you to p.1
+    await page.waitForTimeout(600);
+    expect(await currentPage(page), 'zooming in jumped the reader off their page').toBe(before);
+
+    const pctZoomed = await zoomPct(page);
+    await zoomOut(page).click();
+    await expect
+      .poll(() => zoomPct(page), { message: 'zoom % did not decrease' })
+      .toBeLessThan(pctZoomed);
+    await page.waitForTimeout(600);
+    expect(await currentPage(page), 'zooming out jumped the reader off their page').toBe(before);
+  });
+
+  test('12 · four rapid PageDown presses advance exactly four pages', async ({ page }) => {
+    await boot(page);
+    expect(await currentPage(page)).toBe(1);
+
+    // No waits between presses: this is the regression — a debounce/animation
+    // that reads the *current* page swallows repeats and only moves one page.
+    for (let i = 0; i < 4; i++) await page.keyboard.press('PageDown');
+
+    await expect
+      .poll(() => currentPage(page), { message: 'rapid PageDown presses were swallowed' })
+      .toBe(5);
+
+    for (let i = 0; i < 2; i++) await page.keyboard.press('PageUp');
+    await expect.poll(() => currentPage(page)).toBe(3);
+  });
+
+  test('13 · typing a page number and pressing Enter jumps there', async ({ page }) => {
+    await boot(page);
+    const viewport = page.locator('.dd-viewport');
+    const scrollBefore = await viewport.evaluate((el) => el.scrollTop);
+
+    await gotoPage(page, 17);
+
+    expect(await currentPage(page)).toBe(17);
+    const scrollAfter = await viewport.evaluate((el) => el.scrollTop);
+    expect(scrollAfter, 'the viewport did not actually scroll').toBeGreaterThan(scrollBefore);
+  });
+
+  test('14 · Ctrl+F opens search and a real term yields a non-zero match count', async ({
+    page,
+  }) => {
+    await boot(page);
+    await expect(page.locator('.dd-search')).toHaveCount(0);
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await expect(page.locator('.dd-search')).toBeVisible();
+    await expect(page.locator('.dd-search input')).toBeFocused();
+
+    await page.keyboard.type('supergravity');
+
+    const count = page.locator('.dd-search-count');
+    await expect(count).toHaveText(/^\d+ \/ \d+$/, { timeout: 60_000 });
+    const total = parseInt((await count.textContent())!.split('/')[1].trim(), 10);
+    expect(total, 'search found no matches for a term that is in the document').toBeGreaterThan(0);
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.dd-search')).toHaveCount(0);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════
+   MOBILE — real phone viewport + touch emulation (Pixel 5 descriptor)
+   ══════════════════════════════════════════════════════════════════════ */
+
+test.describe('mobile · responsive layout', () => {
+  test.use({ ...PIXEL_5, viewport: { width: 390, height: 844 } });
+
+  test('2b · H activates pan mode, where the Pan button actually exists', async ({ page }) => {
+    await boot(page);
+
+    // touch layout: Pan replaces Text in the toolbar
+    await expect(tool(page, 'pan')).toHaveCount(1);
+    await expect(tool(page, 'text')).toHaveCount(0);
+    await expect(tool(page, 'region')).toHaveClass(/\bon\b/);
+
+    await setMode(page, 'h');
+    await expect(tool(page, 'region')).not.toHaveClass(/\bon\b/);
+
+    await setMode(page, 'r');
+    await expect(tool(page, 'pan')).not.toHaveClass(/\bon\b/);
+
+    // and T must not strand a phone user in a tool with no button
+    await page.keyboard.press('t');
+    await page.waitForTimeout(300);
+    await expect(tool(page, 'region'), 'T stranded the phone user in a toolless mode').toHaveClass(
+      /\bon\b/,
+    );
+  });
+
+  test('15 · the logo and the tool labels are hidden on a phone', async ({ page }) => {
+    await boot(page);
+
+    await expect(page.locator('.dd-app')).toHaveClass(/\bis-mobile\b/);
+    // both are still in the DOM — the media query hides them
+    await expect(page.locator('.dd-logo')).toHaveCount(1);
+    await expect(page.locator('.dd-logo')).toBeHidden();
+    expect(await cssOf(page.locator('.dd-logo'), 'display')).toBe('none');
+
+    const labels = page.locator('.dd-lbl');
+    expect(await labels.count()).toBeGreaterThan(0);
+    expect(await cssOf(labels.first(), 'display')).toBe('none');
+    await expect(labels.first()).toBeHidden();
+  });
+
+  test('16 · the hamburger opens the sidebar as an OVERLAY, with a scrim', async ({ page }) => {
+    await boot(page);
+    await expect(page.locator('.dd-sidebar')).toHaveCount(0);
+
+    const mainW = (await page.locator('.dd-main').boundingBox())!.width;
+
+    await page.locator('.dd-burger').tap();
+
+    const sidebar = page.locator('.dd-sidebar');
+    await expect(sidebar).toBeVisible();
+    expect(await cssOf(sidebar, 'position'), 'sidebar must overlay, not squeeze').toBe('absolute');
+
+    // the PDF pane keeps the whole width underneath the drawer
+    const viewerW = (await page.locator('.dd-viewer').boundingBox())!.width;
+    expect(Math.abs(viewerW - mainW), 'the viewer was squeezed by the sidebar').toBeLessThanOrEqual(
+      1,
+    );
+
+    await expect(page.locator('.dd-scrim')).toBeVisible();
+    await expect(page.locator('.dd-burger')).toHaveClass(/\bon\b/);
+  });
+
+  test('17 · the chat button opens the context panel AND closes the sidebar', async ({ page }) => {
+    await boot(page);
+
+    await page.locator('.dd-burger').tap();
+    await expect(page.locator('.dd-sidebar')).toBeVisible();
+
+    await page.locator('.dd-chatbtn').tap();
+
+    const panel = page.locator('.dd-panel');
+    await expect(panel).toBeVisible();
+    expect(await cssOf(panel, 'position')).toBe('absolute');
+    // mutually exclusive: only one overlay at a time on a phone
+    await expect(page.locator('.dd-sidebar')).toHaveCount(0);
+    await expect(page.locator('.dd-chatbtn')).toHaveClass(/\bon\b/);
+
+    // and back the other way
+    await page.locator('.dd-burger').tap();
+    await expect(page.locator('.dd-sidebar')).toBeVisible();
+    await expect(page.locator('.dd-panel')).toHaveCount(0);
+  });
+
+  test('18 · tapping the scrim dismisses the open overlay', async ({ page }) => {
+    await boot(page);
+
+    await page.locator('.dd-burger').tap();
+    const scrim = page.locator('.dd-scrim');
+    await expect(scrim).toBeVisible();
+
+    // The sidebar drawer covers min(86vw, 340px) of the scrim, so tap the
+    // exposed strip on the right rather than the element's centre.
+    const box = (await scrim.boundingBox())!;
+    await scrim.tap({ position: { x: box.width - 15, y: box.height / 2 } });
+
+    await expect(page.locator('.dd-sidebar')).toHaveCount(0);
+    await expect(page.locator('.dd-scrim')).toHaveCount(0);
+  });
+
+  test('19 · the drag-to-resize splitters are not displayed', async ({ page }) => {
+    await boot(page);
+
+    // closed state
+    await expect(page.locator('.dd-splitter')).toBeHidden();
+
+    // and still not there once a pane is open (they are `!isMobile`-gated in
+    // App.tsx AND `display: none` in the media query — belt and braces)
+    await page.locator('.dd-burger').tap();
+    await expect(page.locator('.dd-sidebar')).toBeVisible();
+    await expect(page.locator('.dd-splitter')).toBeHidden();
+  });
+
+  test('20 · the zoom/page pill is position: fixed', async ({ page }) => {
+    await boot(page);
+
+    const meta = page.locator('.dd-meta');
+    await expect(meta).toBeVisible();
+    expect(await cssOf(meta, 'position')).toBe('fixed');
+
+    // it floats over the PDF near the bottom, not in the top toolbar
+    const metaBox = (await meta.boundingBox())!;
+    const topBox = (await page.locator('.dd-top').boundingBox())!;
+    expect(metaBox.y, 'the pill is still in the top bar').toBeGreaterThan(topBox.y + topBox.height);
   });
 });

@@ -6,7 +6,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:e2e": "playwright test -c tests/playwright.config.mjs"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tests/tsconfig.json",
+    "test:e2e": "npm run typecheck && playwright test -c tests/playwright.config.mjs",
+    "test:e2e:only": "playwright test -c tests/playwright.config.mjs",
+    "test:e2e:headed": "playwright test -c tests/playwright.config.mjs --headed"
   },
   "keywords": [],
   "author": "",

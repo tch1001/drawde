@@ -1,0 +1,3 @@
+# Playwright run output: traces, failure screenshots, .last-run.json
+.artifacts/
+playwright-report/
