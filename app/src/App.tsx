@@ -158,13 +158,29 @@ function ModeController({
     });
     // keep our own chrome from swallowing page pointer events
     interaction.addExclusionClass('dd-no-interaction');
-    // Region is drawde's primary gesture, so it's the default tool on every
-    // device — set as the default (not just activated) so anything that calls
-    // activateDefaultMode() lands back here rather than on text selection.
-    interaction.setDefaultMode(BOX_MODE);
-    interaction.activate(BOX_MODE);
-    return interaction.onModeChange((s: { activeMode: string }) => setMode(s.activeMode));
-  }, [interaction]);
+
+    // Region is the default *selection* tool — never Text — on both platforms.
+    //
+    // On touch, though, it must not be the default tool outright: a mode that
+    // draws by dragging has to claim raw touch, and the interaction manager
+    // implements that by putting `touch-action: none` on every page. That
+    // disables the browser's native compositor scrolling over the whole PDF,
+    // so every scroll round-trips through JS and feels laggy. One finger can
+    // scroll or draw, not both. So touch opens in Pan (smooth native-feeling
+    // scrolling) with Region one tap away; desktop opens straight in Region,
+    // where the wheel scrolls and the drag is free to draw.
+    const initial = isMobile ? PAN_MODE : BOX_MODE;
+    // Subscribe BEFORE activating: activate() emits synchronously, so
+    // subscribing afterwards misses the very event that tells the toolbar which
+    // tool is live — the mode would be right but the button would look wrong.
+    const unsubscribe = interaction.onModeChange((s: { activeMode: string }) =>
+      setMode(s.activeMode),
+    );
+    interaction.setDefaultMode(initial);
+    interaction.activate(initial);
+    setMode(initial);
+    return unsubscribe;
+  }, [interaction, isMobile]);
 
   useEffect(() => {
     if (!interaction) return;

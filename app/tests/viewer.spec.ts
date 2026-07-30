@@ -238,8 +238,9 @@ test.describe('desktop · boot & modes', () => {
   test('2 · R / T switch tool and light the matching toolbar button', async ({ page }) => {
     await boot(page);
 
-    // Region is the default tool on every device (ModeController calls
-    // setDefaultMode(BOX_MODE) + activate(BOX_MODE) once the manager is up).
+    // Region is the default tool ON DESKTOP, where the wheel scrolls and the
+    // drag is free to draw. Touch opens in Pan instead — see the mobile test
+    // '2c · touch opens in Pan so native scrolling survives'.
     await expect(tool(page, 'region')).toHaveClass(/\bon\b/);
 
     await setMode(page, 't');
@@ -537,12 +538,48 @@ test.describe('desktop · zoom, paging & search', () => {
 test.describe('mobile · responsive layout', () => {
   test.use({ ...PIXEL_5, viewport: { width: 390, height: 844 } });
 
+  /**
+   * Regression guard for laggy touch scrolling.
+   *
+   * A mode that draws by dragging must claim raw touch, and the interaction
+   * manager implements that by setting `touch-action: none` on every page —
+   * which disables the browser's native compositor scrolling across the whole
+   * PDF and makes every scroll round-trip through JS. Pan mode declares
+   * `wantsRawTouch: false`, so opening in Pan on touch keeps scrolling native.
+   *
+   * If a future change makes Region the default on touch again, this fails.
+   */
+  test('2c · touch opens in Pan so native scrolling survives', async ({ page }) => {
+    await boot(page);
+
+    await expect(tool(page, 'pan'), 'touch should open in Pan').toHaveClass(/\bon\b/);
+
+    const pageTouchAction = () =>
+      page.evaluate(() => {
+        const el = [...document.querySelectorAll('.dd-viewport *')].find((e) =>
+          (e.getAttribute('style') || '').includes('touch-action'),
+        );
+        return el ? getComputedStyle(el).touchAction : 'no-page-found';
+      });
+
+    expect(
+      await pageTouchAction(),
+      'pages must not disable native touch scrolling in the default touch tool',
+    ).not.toBe('none');
+
+    // ...and Region legitimately does claim touch, since it draws by dragging
+    await setMode(page, 'r');
+    expect(await pageTouchAction()).toBe('none');
+  });
+
   test('2b · H activates pan mode, where the Pan button actually exists', async ({ page }) => {
     await boot(page);
 
     // touch layout: Pan replaces Text in the toolbar
     await expect(tool(page, 'pan')).toHaveCount(1);
     await expect(tool(page, 'text')).toHaveCount(0);
+
+    await setMode(page, 'r');
     await expect(tool(page, 'region')).toHaveClass(/\bon\b/);
 
     await setMode(page, 'h');
