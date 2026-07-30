@@ -129,7 +129,7 @@ export function Sidebar({
 }: {
   documentId: string;
   open: boolean;
-  width: number;
+  width?: number;
   currentPage: number;
 }) {
   const { provides: bookmarks } = useBookmarkCapability();

@@ -45,17 +45,28 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
   );
 }
 
-export function SelectionPanel({ width }: { width: number }) {
+export function SelectionPanel({
+  width,
+  onClose,
+}: {
+  width?: number;
+  onClose?: () => void;
+}) {
   const regions = useRegions();
 
   return (
-    <aside className="dd-panel" style={{ width }}>
+    <aside className="dd-panel dd-no-interaction" style={width ? { width } : undefined}>
       <header className="dd-panel-head">
         <h2>Context</h2>
         <span className="dd-count">{regions.length}</span>
         {regions.length > 0 && (
           <button className="dd-clear" onClick={() => regionStore.clear()}>
             clear all
+          </button>
+        )}
+        {onClose && (
+          <button className="dd-panel-close" onClick={onClose} aria-label="Close panel">
+            ×
           </button>
         )}
       </header>

@@ -6,6 +6,7 @@ import type { Position } from '@embedpdf/models';
 import { CROP_SCALE, type Rect, type Region } from './types';
 import { nextRegionId, regionStore, useRegionsForPage } from './store';
 import { BOX_MODE } from './modes';
+import { selectionMode } from './selection-mode';
 
 interface Props {
   documentId: string;
@@ -68,9 +69,10 @@ export function BoxSelectLayer({ documentId, pageIndex }: Props) {
       handlers: {
         onPointerDown: (pos, evt) => {
           startRef.current = pos;
-          // shift (or meta) = add to the existing selection, like Cursor's add-to-chat.
+          // Additive when Shift is held OR selection-lock is on (the touch path).
           // NB: ctrl is excluded — ctrl+drag/scroll is reserved for zoom.
-          additiveRef.current = Boolean(evt?.shiftKey || evt?.metaKey);
+          if (evt?.shiftKey || evt?.metaKey) selectionMode.setShift(true);
+          additiveRef.current = selectionMode.isAdditive;
           // keep receiving move/up even when the pointer leaves the page element
           evt?.setPointerCapture?.();
           setPreview({ origin: { x: pos.x, y: pos.y }, size: { width: 0, height: 0 } });

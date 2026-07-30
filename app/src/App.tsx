@@ -29,8 +29,11 @@ import { BoxSelectLayer } from './BoxSelectLayer';
 import { SelectionPanel } from './SelectionPanel';
 import { Sidebar } from './Sidebar';
 import { SearchBar } from './SearchBar';
+import { PanPluginPackage, usePan } from '@embedpdf/plugin-pan/react';
+import { selectionMode, useSelectionMode } from './selection-mode';
+import { PAN_MODE } from './modes';
 import { BOX_MODE, TEXT_MODE } from './modes';
-import { nextRegionId, regionStore } from './store';
+import { nextRegionId, regionStore, useRegions } from './store';
 import type { Region } from './types';
 
 const PDF_URL = './sample.pdf';
@@ -52,6 +55,9 @@ const plugins = [
   // which is what removes the flash when zooming
   createPluginRegistration(TilingPluginPackage, { tileSize: 768, overlapPx: 2, extraRings: 1 }),
   createPluginRegistration(SearchPluginPackage),
+  // defaultMode 'mobile' is the plugin default: pan is the default tool on touch
+  // devices, so a phone scrolls/pinches naturally until a select tool is chosen.
+  createPluginRegistration(PanPluginPackage),
 ];
 
 /**
@@ -158,6 +164,12 @@ function ModeController({
       } else if (k === 't') {
         e.preventDefault();
         interaction.activate(TEXT_MODE);
+      } else if (k === 'h') {
+        e.preventDefault();
+        interaction.activate(PAN_MODE);
+      } else if (k === 'l') {
+        e.preventDefault();
+        selectionMode.toggleLock();
       } else if (k === 'escape') {
         regionStore.clear();
       }
@@ -166,7 +178,8 @@ function ModeController({
     return () => window.removeEventListener('keydown', onKey);
   }, [interaction]);
 
-  const isBox = mode === BOX_MODE;
+  const tool =
+    mode === BOX_MODE ? 'box' : mode === PAN_MODE ? 'pan' : 'text';
 
   return (
     <div className="dd-modebar dd-no-interaction">
@@ -178,25 +191,76 @@ function ModeController({
       >
         ☰
       </button>
-      <button
-        className={`dd-mode ${isBox ? 'on' : ''}`}
-        onClick={() => interaction?.activate(BOX_MODE)}
-      >
-        ▭ Region <kbd>R</kbd>
-      </button>
-      <button
-        className={`dd-mode ${!isBox ? 'on' : ''}`}
-        onClick={() => interaction?.activate(TEXT_MODE)}
-      >
-        T Text <kbd>T</kbd>
-      </button>
+
+      <div className="dd-tools">
+        <button
+          className={`dd-mode ${tool === 'pan' ? 'on' : ''}`}
+          onClick={() => interaction?.activate(PAN_MODE)}
+          title="Pan & zoom (H)"
+        >
+          <span className="dd-ico">✋</span>
+          <span className="dd-lbl">Pan <kbd>H</kbd></span>
+        </button>
+        <button
+          className={`dd-mode ${tool === 'box' ? 'on' : ''}`}
+          onClick={() => interaction?.activate(BOX_MODE)}
+          title="Select a region (R)"
+        >
+          <span className="dd-ico">▭</span>
+          <span className="dd-lbl">Region <kbd>R</kbd></span>
+        </button>
+        <button
+          className={`dd-mode ${tool === 'text' ? 'on' : ''}`}
+          onClick={() => interaction?.activate(TEXT_MODE)}
+          title="Select text (T)"
+        >
+          <span className="dd-ico">T</span>
+          <span className="dd-lbl">Text <kbd>T</kbd></span>
+        </button>
+        <LockSelectionButton />
+      </div>
+
       <span className="dd-hint">
-        {isBox ? 'drag a box around an equation' : 'drag to select text'} ·{' '}
-        <kbd>Shift</kbd> add · <kbd>Ctrl</kbd>+scroll zoom · <kbd>PgUp</kbd>/<kbd>PgDn</kbd> page
+        {tool === 'box'
+          ? 'drag a box around an equation'
+          : tool === 'text'
+            ? 'drag to select text'
+            : 'drag to pan · pinch or ctrl+scroll to zoom'}
       </span>
-      <ZoomControls documentId={documentId} />
-      <PageIndicator documentId={documentId} />
+
+      {/* On mobile this becomes a floating pill at the bottom — the top row
+          has no space for it next to the tools and the chat button. */}
+      <div className="dd-meta">
+        <ZoomControls documentId={documentId} />
+        <PageIndicator documentId={documentId} />
+      </div>
     </div>
+  );
+}
+
+/**
+ * Additive-selection toggle. Tapping it locks additive mode on (the only way to
+ * multi-select on touch); holding Shift lights up the same button, so the
+ * keyboard shortcut and the touch affordance are visibly one feature.
+ */
+function LockSelectionButton() {
+  const { locked, shift, isAdditive } = useSelectionMode();
+  return (
+    <button
+      className={`dd-mode dd-lock ${isAdditive ? 'on' : ''} ${shift && !locked ? 'via-shift' : ''}`}
+      onClick={() => selectionMode.toggleLock()}
+      title={
+        locked
+          ? 'Selection locked — new selections add to the context (L). Tap to unlock.'
+          : 'Lock selection so new selections add instead of replacing. Holding Shift does the same (L).'
+      }
+      aria-pressed={locked}
+    >
+      <span className="dd-ico">{isAdditive ? '🔒' : '🔓'}</span>
+      <span className="dd-lbl">
+        {shift && !locked ? 'Adding' : locked ? 'Locked' : 'Lock'} <kbd>L</kbd>
+      </span>
+    </button>
   );
 }
 
@@ -302,8 +366,8 @@ function TextSelectionBridge({ documentId }: { documentId: string }) {
             createdAt: Date.now(),
           };
 
-          // shift-select adds; plain select replaces
-          if (shiftHeld) regionStore.add(region);
+          // additive (shift held or selection-lock on) adds; otherwise replaces
+          if (selectionMode.isAdditive) regionStore.add(region);
           else regionStore.replace(region);
 
           scoped.clear();
@@ -315,19 +379,6 @@ function TextSelectionBridge({ documentId }: { documentId: string }) {
 
   return null;
 }
-
-// module-level shift tracking: pointerup fires after keyup in some browsers,
-// so we sample the modifier continuously rather than off the event.
-let shiftHeld = false;
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Shift') shiftHeld = true;
-});
-window.addEventListener('keyup', (e) => {
-  if (e.key === 'Shift') shiftHeld = false;
-});
-window.addEventListener('pointerdown', (e) => {
-  shiftHeld = e.shiftKey || e.metaKey || e.ctrlKey;
-}, true);
 
 /**
  * Ctrl/Cmd + wheel to zoom, centred on the cursor.
@@ -422,7 +473,7 @@ function SidebarHost({
 }: {
   documentId: string;
   open: boolean;
-  width: number;
+  width?: number;
 }) {
   const { state } = useScroll(documentId);
   return (
@@ -437,11 +488,63 @@ function SidebarHost({
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+const MOBILE_QUERY = '(max-width: 820px)';
+
+/** True on narrow viewports. Drives single-pane layout + overlay panels. */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
+
+/** Count badge on the mobile chat button so selections aren't invisible. */
+function ChatButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const regions = useRegions();
+  return (
+    <button
+      className={`dd-chatbtn ${open ? 'on' : ''}`}
+      onClick={onToggle}
+      title="Context & chat"
+      aria-label="Toggle context panel"
+    >
+      💬
+      {regions.length > 0 && <span className="dd-chatbtn-badge">{regions.length}</span>}
+    </button>
+  );
+}
+
 export default function App() {
   const { engine, isLoading } = usePdfiumEngine();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  // Desktop starts with both panes open; mobile starts on the PDF alone.
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [panelOpen, setPanelOpen] = useState(!isMobile);
   const [sidebarW, setSidebarW] = useState(190);
   const [panelW, setPanelW] = useState(360);
+
+  // Crossing the breakpoint resets to that layout's sensible default, and
+  // guarantees we never leave a mobile overlay stuck open on desktop.
+  useEffect(() => {
+    setSidebarOpen(!isMobile);
+    setPanelOpen(!isMobile);
+  }, [isMobile]);
+
+  // On mobile the panels are overlays, so only one may be open at a time.
+  const openSidebar = (v: boolean) => {
+    setSidebarOpen(v);
+    if (v && isMobile) setPanelOpen(false);
+  };
+  const openPanel = (v: boolean) => {
+    setPanelOpen(v);
+    if (v && isMobile) setSidebarOpen(false);
+  };
 
   if (isLoading || !engine) {
     return (
@@ -459,25 +562,38 @@ export default function App() {
           <DocumentContent documentId={activeDocumentId}>
             {({ isLoaded }: { isLoaded: boolean }) =>
               isLoaded ? (
-                <div className="dd-app">
+                <div className={`dd-app ${isMobile ? 'is-mobile' : ''}`}>
                   <header className="dd-top dd-no-interaction">
-                    <h1>
+                    {/* logo is desktop-only — the phone needs the width for tools */}
+                    <h1 className="dd-logo">
                       drawde <span>viewer</span>
                     </h1>
                     <ModeController
                       documentId={activeDocumentId}
                       sidebarOpen={sidebarOpen}
-                      onToggleSidebar={() => setSidebarOpen((v) => !v)}
+                      onToggleSidebar={() => openSidebar(!sidebarOpen)}
                     />
+                    <ChatButton open={panelOpen} onToggle={() => openPanel(!panelOpen)} />
                   </header>
 
                   <main className="dd-main">
+                    {/* one tap anywhere on the PDF dismisses an open overlay */}
+                    {isMobile && (sidebarOpen || panelOpen) && (
+                      <div
+                        className="dd-scrim dd-no-interaction"
+                        onPointerDown={() => {
+                          setSidebarOpen(false);
+                          setPanelOpen(false);
+                        }}
+                      />
+                    )}
+
                     <SidebarHost
                       documentId={activeDocumentId}
                       open={sidebarOpen}
-                      width={sidebarW}
+                      width={isMobile ? undefined : sidebarW}
                     />
-                    {sidebarOpen && (
+                    {sidebarOpen && !isMobile && (
                       <Splitter
                         side="left"
                         onDrag={(dx) => setSidebarW((w) => clamp(w + dx, 130, 460))}
@@ -536,11 +652,18 @@ export default function App() {
                       <SearchBar documentId={activeDocumentId} />
                     </div>
 
-                    <Splitter
-                      side="right"
-                      onDrag={(dx) => setPanelW((w) => clamp(w + dx, 240, 720))}
-                    />
-                    <SelectionPanel width={panelW} />
+                    {panelOpen && !isMobile && (
+                      <Splitter
+                        side="right"
+                        onDrag={(dx) => setPanelW((w) => clamp(w + dx, 240, 720))}
+                      />
+                    )}
+                    {panelOpen && (
+                      <SelectionPanel
+                        width={isMobile ? undefined : panelW}
+                        onClose={isMobile ? () => setPanelOpen(false) : undefined}
+                      />
+                    )}
                   </main>
                 </div>
               ) : (
