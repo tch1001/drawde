@@ -377,6 +377,13 @@ function TextSelectionBridge({ documentId }: { documentId: string }) {
       const formatted = scoped.getFormattedSelection();
       if (!formatted || formatted.length === 0) return;
 
+      // Latch additive NOW, synchronously at end-of-selection. Text extraction
+      // below is async, and reading the flag inside its callback loses the race
+      // against a user who releases Shift as they release the mouse — their
+      // additive selection would silently replace the context instead.
+      // BoxSelectLayer latches at pointerdown for the same reason.
+      const additive = selectionMode.isAdditive;
+
       scoped.getSelectedText().wait(
         (lines: string[]) => {
           const text = lines.join('\n').trim();
@@ -395,7 +402,7 @@ function TextSelectionBridge({ documentId }: { documentId: string }) {
           };
 
           // additive (shift held or selection-lock on) adds; otherwise replaces
-          if (selectionMode.isAdditive) regionStore.add(region);
+          if (additive) regionStore.add(region);
           else regionStore.replace(region);
 
           scoped.clear();

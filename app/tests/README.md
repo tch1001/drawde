@@ -68,7 +68,15 @@ hit-testing, default-prevention *and* native drag, so they cannot see it.
 | # | Test | Guards against |
 |---|---|---|
 | 1 | Boots: PDFium WASM engine loads, first page bitmap decodes, page count is live, **zero console errors** | blank viewer, WASM/asset regressions, React key/hook warnings |
-| 2 | `R` / `T` / `H` activate region / text / pan mode and the toolbar button gains `.on`; clicking a button works too | keybinding regressions, mode-change subscription breaking |
+| 2 | Region is the default tool; `R` / `T` activate region / text and the matching toolbar button gains `.on`; the buttons work too; **`H` on desktop does not strand you** | keybinding regressions, mode-change subscription breaking, the `stranded` fallback in `ModeController` |
+
+> **Why `H` is asserted on mobile, not desktop.** The toolbar is now
+> viewport-conditional: `showPan = isMobile`, `showText = !isMobile`. Pressing
+> `H` on a desktop viewport activates `panMode` and a `stranded` effect
+> immediately bounces you back to Region, because there is no Pan button to show
+> `.on`. So test 2 asserts that contract on desktop, and **test 2b** (in the
+> mobile describe) asserts the real `H` → pan → `.on` behaviour where the button
+> exists. If Pan ever returns to the desktop toolbar, move 2b back into test 2.
 
 ### `desktop · region selection`
 
@@ -110,6 +118,7 @@ touch events, not clicks.
 
 | # | Test | Guards against |
 |---|---|---|
+| 2b | `H` activates pan and the Pan button gains `.on`; the Text button is absent; `T` does not strand a phone user | the touch toolbar's tool set and the `stranded` fallback |
 | 15 | `.dd-logo` and `.dd-lbl` are `display: none` | the media query / `is-mobile` class breaking |
 | 16 | The hamburger opens the sidebar as an **overlay**: `position: absolute` **and** `.dd-viewer` keeps the full width; a `.dd-scrim` appears | the drawer squeezing the PDF into a sliver on a phone |
 | 17 | The chat button opens the context panel **and closes the sidebar** (and vice-versa) — mutually exclusive | two overlays stacking on a 390px screen |
@@ -133,16 +142,18 @@ touch events, not clicks.
    coordinates off it; the page is 612x792pt rendered 1:1 at 100%, so screen
    offsets from the layer's top-left *are* PDF points.
 
-2. **Test 8 holds Shift for 250 ms past mouseup — deliberately.**
-   `BoxSelectLayer` samples the additive flag at `pointerdown`
-   (`additiveRef.current`), which is race-free. `TextSelectionBridge` reads
-   `selectionMode.isAdditive` inside the **async** `getSelectedText().wait()`
-   callback, so if Shift comes up before that callback runs, an intended
-   *additive* text selection *replaces* the context instead. A human who snaps
-   Shift up the instant the mouse button releases can hit this. It reproduced in
-   an earlier suite. **This is app fragility, not a test artefact** — if the
-   bridge is ever changed to latch the flag at `onEndSelection` time (as the box
-   layer does at pointerdown), drop the `holdShiftMs` and the test still passes.
+2. **Test 8 · text-selection Shift race — FIXED, and the test now guards it.**
+   `TextSelectionBridge` used to read `selectionMode.isAdditive` inside the
+   **async** `getSelectedText().wait()` callback, so a user who released Shift
+   as they released the mouse had their *additive* text selection silently
+   *replace* the context. `App.tsx` now latches the flag synchronously in
+   `onEndSelection` — matching what `BoxSelectLayer` already did at
+   `pointerdown` (`additiveRef.current`).
+
+   Test 8 therefore releases Shift **at mouseup with no grace period**, and was
+   verified against a negative control: reverting the latch makes it fail,
+   restoring the latch makes it pass. Do not reintroduce a `holdShiftMs` here —
+   the strictness is the point, or the regression comes back unnoticed.
 
 3. **`.dd-rect` counts *all* regions, not just box regions.**
    `BoxSelectLayer` draws a rectangle for every `Region` on the page, text ones
@@ -176,6 +187,25 @@ touch events, not clicks.
 9. **Console-error assertion (test 1) filters vite/React-DevTools noise** via
    `CONSOLE_NOISE`. Add to that list only for genuinely-benign dev-server
    chatter; do not use it to silence a real error.
+
+10. **`devices['Pixel 5']` is spread WITHOUT `defaultBrowserType`.**
+    Playwright rejects `test.use({ defaultBrowserType })` inside a describe
+    ("forces a new worker"). The spec destructures it away into `PIXEL_5`; the
+    config already pins chromium. Don't put the raw descriptor back.
+
+11. **The tools in the toolbar are viewport-conditional.** `showPan = isMobile`,
+    `showText = !isMobile`. Locators address buttons by their `title`
+    (`.dd-mode[title^="Select a region"]`, …) rather than by index — the index
+    has already shifted twice (once when Pan was added, once when it became
+    mobile-only). Keep it that way.
+
+### Negative control
+
+The assertions were validated by running four deliberately-wrong mirrors of
+tests 3, 4, 12 and 14 (rect pinned at the page origin, 2 plain drags expected to
+leave 2 regions, 4 `PageDown` expected to reach page 6, a nonsense search term
+expected to match). All four failed, so these tests genuinely bite rather than
+passing vacuously. Worth repeating if you refactor the helpers.
 
 ---
 

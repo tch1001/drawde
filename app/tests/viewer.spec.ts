@@ -384,9 +384,13 @@ test.describe('desktop · text selection & mixing', () => {
     await expect(page.locator('.dd-card .dd-kind-box')).toHaveCount(1);
 
     await setMode(page, 't');
-    // Shift is held 250ms past mouseup: the text bridge samples the additive
-    // flag inside an async getSelectedText() callback. See tests/README.md.
-    await dragOnPage(page, TEXT_A, { shift: true, holdShiftMs: 250 });
+    // Shift is released AT mouseup, with no grace period. This is the race the
+    // text bridge used to lose: it read the additive flag inside the async
+    // getSelectedText() callback, so a Shift released on mouseup turned an
+    // additive selection into a replace. The bridge now latches the flag
+    // synchronously in onEndSelection — keep this assertion strict so a
+    // regression fails here instead of being masked by a hold.
+    await dragOnPage(page, TEXT_A, { shift: true });
 
     await expect(cards(page)).toHaveCount(2);
     await expect(page.locator('.dd-card .dd-kind-box')).toHaveCount(1);
