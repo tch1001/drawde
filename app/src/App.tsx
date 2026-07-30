@@ -605,7 +605,11 @@ export default function App() {
           <DocumentContent documentId={activeDocumentId}>
             {({ isLoaded }: { isLoaded: boolean }) =>
               isLoaded ? (
-                <div className={`dd-app ${isMobile ? 'is-mobile' : ''}`}>
+                <div
+                  className={`dd-app ${isMobile ? 'is-mobile' : ''} ${
+                    panelOpen ? 'panel-open' : ''
+                  }`}
+                >
                   <header className="dd-top dd-no-interaction">
                     {/* logo is desktop-only — the phone needs the width for tools */}
                     <h1 className="dd-logo">

@@ -347,11 +347,22 @@ kbd {
   /* overlay panes slide over the PDF instead of squeezing it */
   .dd-sidebar, .dd-panel {
     position: absolute; top: 0; bottom: 0; z-index: 30;
-    width: min(86vw, 340px);
     box-shadow: 0 0 40px rgba(0,0,0,.55);
   }
-  .dd-sidebar { left: 0; border-right: 1px solid var(--border); }
-  .dd-panel { right: 0; border-left: 1px solid var(--border); }
+  /* the sidebar is a nav drawer — partial width, PDF still visible beside it */
+  .dd-sidebar {
+    left: 0; width: min(86vw, 340px);
+    border-right: 1px solid var(--border);
+  }
+  /* the context panel is a destination, not a peek: full screen on a phone */
+  .dd-panel {
+    left: 0; right: 0; width: 100%;
+    border-left: none;
+  }
+
+  /* the floating zoom/page pill sits over the panel's compose area — get it
+     out of the way whenever the panel is up */
+  .dd-app.panel-open .dd-meta { display: none; }
 
   .dd-scrim {
     position: absolute; inset: 0; z-index: 25;

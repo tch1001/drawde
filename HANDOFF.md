@@ -1,6 +1,10 @@
 # HANDOFF — read this first
 
 Last updated: **2026-07-30**, session 1 (continued).
+
+> **Build vs typecheck:** `vite build` does **not** typecheck — it happily bundled a missing
+> import that would have crashed at runtime. Run **`npx tsc --noEmit`** (currently clean) before
+> committing. This is the single most useful check in the repo.
 Read `README.md` for the project goal, then `docs/architecture-notes.md` for the design decisions.
 
 ---
@@ -65,7 +69,24 @@ Implementation notes worth keeping:
 - `interaction.addExclusionClass('dd-no-interaction')` keeps our toolbar from eating page pointer events.
 - Box mode is registered `exclusive: false` — `exclusive: true` makes `PagePointerProvider` overlay a z-index-10 div that would block the ✕ buttons.
 
-**Next on the viewer:** multi-page selections, drag-to-move/resize existing boxes, zoom-independent rect stability check, and wiring the "Ask drawde" button.
+Since then the viewer also gained: a hamburger **sidebar** (outline when the PDF has one, else page
+thumbnails), **ctrl/cmd+wheel zoom** centred on the cursor, **PageUp/PageDown** that never swallow
+rapid presses, **drag-to-resize** splitters, a **tiling layer**, **ctrl/cmd+F search**, an editable
+**page-number input**, a full **mobile layout**, and the **Lock-selection** toggle.
+
+### Hard-won gotchas (all cost real debugging time — don't re-learn these)
+
+| Symptom | Cause |
+|---|---|
+| Box + text selection both dead under a **real mouse** (fine with synthetic events) | `RenderLayer` renders a bare `<img>`; a real drag starts native HTML5 image-drag, which fires `dragstart` and **cancels the pointer stream**. Fixed with `draggable={false}` + `onDragStart` preventDefault + `user-select:none`. EmbedPDF never calls `preventDefault` on mouse/pointer events. |
+| **Blank viewer** until you touch the zoom control | Passing a *partial* config to `ZoomPluginPackage` **replaces the whole `defaultConfig`**, wiping `zoomRanges`/`minZoom`/`maxZoom`, so scroll layout never emitted. Pass no config, or every required key. |
+| Zoom **jumps to page 1** | The zoom plugin's `Point` is **`{vx, vy}`**, not `{x, y}`. `{x,y}` leaves vx/vy undefined → NaN scroll math. |
+| Zoom +/− buttons silently dead | `useZoom(documentId).provides` is **already document-scoped** — calling `.forDocument()` on it is `undefined`. |
+| Rectangles pile up at 0,0 | `PageLayout` (the `renderPage` arg) has **no `scale` field** — read scale from `useDocumentState(documentId).scale`. |
+| Zoom flicker | Two separate artifacts. The *blank flash* was fixed by the tiling layer. The remaining *blur pulse* was the base `RenderLayer` pinned at `scale={1}` and upscaled by the full zoom factor; now quantized to a `[1, 1.5, 2]` ladder (`useBaseScale`). Measure with per-rAF sampling, don't eyeball it. |
+
+**Next on the viewer:** multi-page selections, drag-to-move/resize existing boxes, and wiring the
+"Ask drawde" button.
 
 ### 1. Original phase-2 spec (for reference — all of this is now implemented)
 User's spec, verbatim intent:
