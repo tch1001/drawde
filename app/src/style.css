@@ -295,6 +295,107 @@ kbd {
 .dd-dot { margin: 0 .35rem; }
 .dd-stub { opacity: .65; font-style: italic; }
 
+/* ── OCR output on a card ───────────────────────────────── */
+.dd-latex {
+  margin-top: .45rem; padding: .4rem .5rem; border-radius: 5px;
+  background: rgba(158,206,106,.08); border: 1px solid rgba(158,206,106,.25);
+  color: var(--green); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .74rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+  max-height: 140px; overflow-y: auto;
+}
+.dd-latex-pending { color: var(--muted); background: rgba(255,255,255,.03); border-color: var(--border); font-style: italic; }
+.dd-latex-error { color: var(--yellow, #e0af68); background: rgba(224,175,104,.08); border-color: rgba(224,175,104,.25); font-style: italic; }
+
+.dd-gear {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: .95rem; padding: 0 .2rem;
+}
+.dd-gear:hover { color: var(--text); }
+
+/* ── chat thread ────────────────────────────────────────── */
+.dd-thread { margin-top: .9rem; border-top: 1px solid var(--border); padding-top: .8rem; }
+.dd-msg { margin-bottom: .7rem; font-size: .84rem; line-height: 1.5; }
+.dd-msg-user .dd-msg-text {
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 9px; padding: .45rem .6rem; color: var(--text);
+}
+.dd-msg-assistant .dd-msg-text { color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.dd-msg-error {
+  color: var(--pink); font-size: .78rem; margin-top: .3rem;
+  background: rgba(247,118,142,.08); border: 1px solid rgba(247,118,142,.25);
+  border-radius: 6px; padding: .35rem .5rem;
+}
+.dd-typing { color: var(--muted); }
+
+.dd-progress { font-size: .74rem; color: var(--muted); margin-bottom: .5rem; }
+.dd-progress-bar {
+  display: block; height: 3px; margin-top: .3rem; border-radius: 999px;
+  background: var(--border); overflow: hidden;
+}
+.dd-progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+
+.dd-ask-row { display: flex; gap: .4rem; }
+.dd-ask-input {
+  flex: 1; min-width: 0; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: .5rem .6rem; font-size: .84rem;
+}
+.dd-ask-input:focus { outline: none; border-color: var(--accent); }
+.dd-linkbtn {
+  display: block; margin: .5rem auto 0; background: none; border: none;
+  color: var(--muted); font-size: .76rem; text-decoration: underline; cursor: pointer;
+}
+.dd-linkbtn:hover { color: var(--pink); }
+
+/* ── settings modal ─────────────────────────────────────── */
+.dd-modal-scrim {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
+}
+.dd-modal {
+  width: min(520px, 100%); max-height: 90vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.6);
+}
+.dd-modal-head {
+  display: flex; align-items: center; padding: .8rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.dd-modal-head h2 { margin: 0; font-size: 1rem; flex: 1; }
+.dd-modal-x { background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; }
+.dd-modal-body { padding: 1rem; }
+.dd-modal-foot {
+  display: flex; gap: .6rem; justify-content: flex-end;
+  padding: .8rem 1rem; border-top: 1px solid var(--border);
+}
+.dd-modal-foot .dd-primary { width: auto; padding: .5rem 1.1rem; }
+
+.dd-field { display: block; margin-bottom: .9rem; }
+.dd-field > span { display: block; font-size: .82rem; color: var(--muted); margin-bottom: .35rem; }
+.dd-key-row { display: flex; gap: .4rem; }
+.dd-key-row input {
+  flex: 1; min-width: 0; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px;
+  padding: .5rem .6rem; font-family: ui-monospace, monospace; font-size: .82rem;
+}
+.dd-key-row input:focus { outline: none; border-color: var(--accent); }
+.dd-reveal {
+  background: var(--panel2); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 7px; padding: 0 .7rem; font-size: .76rem; cursor: pointer;
+}
+.dd-check { display: flex; gap: .5rem; align-items: flex-start; font-size: .82rem; margin-bottom: .9rem; }
+.dd-check em { display: block; color: var(--muted); font-size: .74rem; font-style: normal; margin-top: .2rem; line-height: 1.45; }
+.dd-note {
+  font-size: .76rem; color: var(--muted); line-height: 1.5;
+  background: var(--panel2); border-radius: 7px; padding: .55rem .65rem; margin: .6rem 0 0;
+}
+.dd-note code { color: var(--accent); }
+.dd-danger {
+  background: transparent; color: var(--pink); border: 1px solid var(--pink);
+  border-radius: 8px; padding: .5rem 1rem; font-size: .85rem; cursor: pointer;
+}
+
 .dd-panel-foot { padding: .8rem; border-top: 1px solid var(--border); }
 .dd-primary {
   width: 100%; padding: .55rem; border-radius: 8px; border: none;

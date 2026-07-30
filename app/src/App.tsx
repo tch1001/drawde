@@ -30,6 +30,7 @@ import { BoxSelectLayer } from './BoxSelectLayer';
 import { SelectionPanel } from './SelectionPanel';
 import { Sidebar } from './Sidebar';
 import { SearchBar } from './SearchBar';
+import { Settings } from './Settings';
 import { PanPluginPackage } from '@embedpdf/plugin-pan/react';
 import { selectionMode, useSelectionMode } from './selection-mode';
 import { PAN_MODE } from './modes';
@@ -665,6 +666,7 @@ export default function App() {
   // Desktop starts with both panes open; mobile starts on the PDF alone.
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [panelOpen, setPanelOpen] = useState(!isMobile);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarW, setSidebarW] = useState(190);
   const [panelW, setPanelW] = useState(360);
 
@@ -806,9 +808,12 @@ export default function App() {
                       <SelectionPanel
                         width={isMobile ? undefined : panelW}
                         onClose={isMobile ? () => setPanelOpen(false) : undefined}
+                        onOpenSettings={() => setSettingsOpen(true)}
                       />
                     )}
                   </main>
+
+                  {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
                 </div>
               ) : (
                 <div className="dd-boot">

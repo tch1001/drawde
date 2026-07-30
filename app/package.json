@@ -24,6 +24,7 @@
     "vite": "^8.1.5"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@embedpdf/core": "^2.14.4",
     "@embedpdf/engines": "^2.14.4",
     "@embedpdf/models": "^2.14.4",
@@ -40,6 +41,8 @@
     "@embedpdf/plugin-tiling": "^2.14.4",
     "@embedpdf/plugin-viewport": "^2.14.4",
     "@embedpdf/plugin-zoom": "^2.14.4",
+    "@huggingface/transformers": "^3.8.1",
+    "image-js": "^1.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

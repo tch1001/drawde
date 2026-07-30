@@ -26,6 +26,13 @@ export interface Region {
   text?: string;
   /** high-DPI crop, rendered at CROP_SCALE */
   imageUrl?: string;
+  /** same crop as base64 (no data: prefix) — what the model API wants */
+  imageBase64?: string;
+  /** LaTeX from local OCR, once recognised */
+  latex?: string;
+  /** OCR lifecycle for this region */
+  ocrState?: 'idle' | 'running' | 'done' | 'error';
+  ocrError?: string;
   /** set while the crop is being rendered */
   pending?: boolean;
   createdAt: number;

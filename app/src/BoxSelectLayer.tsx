@@ -33,9 +33,26 @@ function renderCrop(
     options: { scaleFactor: CROP_SCALE },
   });
   task.wait(
-    (blob: Blob) => regionStore.update(regionId, { imageUrl: URL.createObjectURL(blob), pending: false }),
+    async (blob: Blob) => {
+      // keep a base64 copy too: object URLs can't be sent to the model API
+      const base64 = await blobToBase64(blob);
+      regionStore.update(regionId, {
+        imageUrl: URL.createObjectURL(blob),
+        imageBase64: base64,
+        pending: false,
+      });
+    },
     () => regionStore.update(regionId, { pending: false }),
   );
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(',')[1] ?? '');
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
 }
 
 /**

@@ -1,5 +1,12 @@
+import { useState } from 'react';
 import { useRegions, regionStore } from './store';
+import { chatStore, useChat } from './chat';
+import { useApiKey } from './llm';
 import type { Region } from './types';
+
+/** What the button asks when the user hasn't typed a question of their own. */
+const DEFAULT_ASK =
+  'Explain what these selections show, and fill in any derivation steps the paper skipped between them.';
 
 function RegionCard({ region, index }: { region: Region; index: number }) {
   return (
@@ -26,6 +33,22 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
         <div className="dd-text">{region.text || <em>(no text)</em>}</div>
       )}
 
+      {/* OCR output, once recognised. Editable-looking but read-only for now —
+          it is a hint to the model, which also sees the image. */}
+      {region.kind === 'box' && region.ocrState === 'running' && (
+        <div className="dd-latex dd-latex-pending">reading equation…</div>
+      )}
+      {region.kind === 'box' && region.latex && (
+        <div className="dd-latex" title="LaTeX from in-browser OCR">
+          {region.latex}
+        </div>
+      )}
+      {region.kind === 'box' && region.ocrState === 'error' && (
+        <div className="dd-latex dd-latex-error">
+          OCR failed — the model will still read the image.
+        </div>
+      )}
+
       <div className="dd-card-foot">
         {region.kind === 'box' && (
           <>
@@ -39,7 +62,9 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
             <span className="dd-dot">·</span>
           </>
         )}
-        <span className="dd-stub">→ OCR / LLM (phase 3)</span>
+        <span className="dd-stub">
+          {region.latex ? 'OCR ✓' : region.kind === 'box' ? 'OCR on ask' : 'text layer'}
+        </span>
       </div>
     </div>
   );
@@ -48,17 +73,29 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
 export function SelectionPanel({
   width,
   onClose,
+  onOpenSettings,
 }: {
   width?: number;
   onClose?: () => void;
+  onOpenSettings?: () => void;
 }) {
   const regions = useRegions();
+  const chat = useChat();
+  const { key } = useApiKey();
+  const [followUp, setFollowUp] = useState('');
 
   return (
     <aside className="dd-panel dd-no-interaction" style={width ? { width } : undefined}>
       <header className="dd-panel-head">
         <h2>Context</h2>
         <span className="dd-count">{regions.length}</span>
+        <button
+          className="dd-gear"
+          onClick={onOpenSettings}
+          title={key ? 'API key set — settings' : 'Add an API key to chat'}
+        >
+          {key ? '⚙' : '⚙!'}
+        </button>
         {regions.length > 0 && (
           <button className="dd-clear" onClick={() => regionStore.clear()}>
             clear all
@@ -72,7 +109,7 @@ export function SelectionPanel({
       </header>
 
       <div className="dd-panel-body">
-        {regions.length === 0 ? (
+        {regions.length === 0 && chat.messages.length === 0 ? (
           <div className="dd-empty">
             <p>Nothing selected yet.</p>
             <ul>
@@ -93,15 +130,88 @@ export function SelectionPanel({
             </p>
           </div>
         ) : (
-          regions.map((r, i) => <RegionCard key={r.id} region={r} index={i} />)
+          <>
+            {regions.map((r, i) => (
+              <RegionCard key={r.id} region={r} index={i} />
+            ))}
+            {chat.messages.length > 0 && (
+              <div className="dd-thread">
+                {chat.messages.map((m) => (
+                  <div key={m.id} className={`dd-msg dd-msg-${m.role}`}>
+                    {m.text && <div className="dd-msg-text">{m.text}</div>}
+                    {m.streaming && !m.text && <span className="dd-typing">…</span>}
+                    {m.error && <div className="dd-msg-error">{m.error}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {regions.length > 0 && (
+      {(regions.length > 0 || chat.messages.length > 0) && (
         <footer className="dd-panel-foot">
-          <button className="dd-primary" disabled title="Wired up in phase 3">
-            Ask drawde about {regions.length} item{regions.length > 1 ? 's' : ''}
-          </button>
+          {chat.status && (
+            <div className="dd-progress">
+              {chat.status}
+              {chat.modelProgress != null && (
+                <span className="dd-progress-bar">
+                  <span style={{ width: `${Math.round(chat.modelProgress * 100)}%` }} />
+                </span>
+              )}
+            </div>
+          )}
+
+          {chat.messages.length > 0 ? (
+            <div className="dd-ask-row">
+              <input
+                className="dd-ask-input"
+                value={followUp}
+                placeholder="Ask a follow-up…"
+                onChange={(e) => setFollowUp(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && followUp.trim() && !chat.busy) {
+                    const q = followUp.trim();
+                    setFollowUp('');
+                    chatStore.ask(q);
+                  }
+                }}
+                disabled={chat.busy}
+              />
+              <button
+                className="dd-primary"
+                disabled={chat.busy || !followUp.trim()}
+                onClick={() => {
+                  const q = followUp.trim();
+                  setFollowUp('');
+                  chatStore.ask(q);
+                }}
+              >
+                Send
+              </button>
+            </div>
+          ) : (
+            <button
+              className="dd-primary"
+              disabled={chat.busy}
+              onClick={() => chatStore.ask(DEFAULT_ASK)}
+            >
+              {chat.busy
+                ? 'Working…'
+                : `Ask drawde about ${regions.length} item${regions.length > 1 ? 's' : ''}`}
+            </button>
+          )}
+
+          {chat.busy && (
+            <button className="dd-linkbtn" onClick={() => chatStore.stop()}>
+              stop
+            </button>
+          )}
+          {!chat.busy && chat.messages.length > 0 && (
+            <button className="dd-linkbtn" onClick={() => chatStore.clear()}>
+              clear chat
+            </button>
+          )}
         </footer>
       )}
     </aside>
