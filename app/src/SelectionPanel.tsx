@@ -1,14 +1,88 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useRegions, regionStore } from './store';
 import { chatStore, useChat } from './chat';
-import { useApiKey } from './llm';
+import { settingsStore, useSettings } from './providers';
+import { Markdown } from './Markdown';
+import { LatexPreview, LatexEditor } from './LatexEditor';
 import type { Region } from './types';
 
-/** What the button asks when the user hasn't typed a question of their own. */
-const DEFAULT_ASK =
-  'Explain what these selections show, and fill in any derivation steps the paper skipped between them.';
+/** Grow to fit the text, then scroll rather than pushing the thread off screen. */
+const COMPOSER_MAX_LINES = 5;
+
+/**
+ * Chat composer: a textarea that grows with its content up to
+ * COMPOSER_MAX_LINES, then scrolls, with a compact arrow send button.
+ *
+ * Enter sends, Shift+Enter inserts a newline — the convention everywhere else,
+ * and the reason the field needs to be multi-line in the first place.
+ */
+function Composer({
+  value,
+  onChange,
+  onSend,
+  onStop,
+  busy,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  onStop: () => void;
+  busy: boolean;
+  placeholder: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Resize after every render that changes the value, not just on keystrokes —
+  // clearing the field after send has to shrink it back too.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    const line = parseFloat(cs.lineHeight) || 18;
+    const chrome =
+      parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) +
+      parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const max = line * COMPOSER_MAX_LINES + chrome;
+    el.style.height = 'auto'; // collapse first, or scrollHeight only ever grows
+    const next = Math.min(el.scrollHeight, max);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+  }, [value]);
+
+  const canSend = !busy && value.trim().length > 0;
+
+  return (
+    <div className="dd-composer">
+      <textarea
+        ref={ref}
+        className="dd-composer-input"
+        rows={1}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (canSend) onSend();
+          }
+        }}
+      />
+      <button
+        className="dd-send"
+        onClick={() => (busy ? onStop() : onSend())}
+        disabled={!busy && !canSend}
+        title={busy ? 'Stop' : 'Send  (Enter)'}
+        aria-label={busy ? 'Stop' : 'Send'}
+      >
+        {busy ? '■' : '↑'}
+      </button>
+    </div>
+  );
+}
 
 function RegionCard({ region, index }: { region: Region; index: number }) {
+  const [editing, setEditing] = useState(false);
   return (
     <div className="dd-card">
       <div className="dd-card-head">
@@ -39,9 +113,27 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
         <div className="dd-latex dd-latex-pending">reading equation…</div>
       )}
       {region.kind === 'box' && region.latex && (
-        <div className="dd-latex" title="LaTeX from in-browser OCR">
-          {region.latex}
+        <div className="dd-latex">
+          <LatexPreview tex={region.latex} />
+          <button
+            className="dd-latex-edit"
+            onClick={() => setEditing(true)}
+            title="OCR wrong? Edit the LaTeX"
+          >
+            edit
+          </button>
         </div>
+      )}
+      {editing && (
+        <LatexEditor
+          initial={region.latex ?? ''}
+          cropUrl={region.imageUrl}
+          onClose={() => setEditing(false)}
+          onSave={(tex) => {
+            regionStore.update(region.id, { latex: tex, ocrState: 'done' });
+            setEditing(false);
+          }}
+        />
       )}
       {region.kind === 'box' && region.ocrState === 'error' && (
         <div className="dd-latex dd-latex-error">
@@ -81,8 +173,12 @@ export function SelectionPanel({
 }) {
   const regions = useRegions();
   const chat = useChat();
-  const { key } = useApiKey();
+  const settings = useSettings();
   const [followUp, setFollowUp] = useState('');
+
+  const available = settingsStore.availableModels();
+  const active = settingsStore.activeModel();
+  const hasKey = available.length > 0;
 
   return (
     <aside className="dd-panel dd-no-interaction" style={width ? { width } : undefined}>
@@ -92,9 +188,9 @@ export function SelectionPanel({
         <button
           className="dd-gear"
           onClick={onOpenSettings}
-          title={key ? 'API key set — settings' : 'Add an API key to chat'}
+          title={hasKey ? 'API keys' : 'Add an API key to chat'}
         >
-          {key ? '⚙' : '⚙!'}
+          {hasKey ? '⚙' : '⚙!'}
         </button>
         {regions.length > 0 && (
           <button className="dd-clear" onClick={() => regionStore.clear()}>
@@ -138,7 +234,16 @@ export function SelectionPanel({
               <div className="dd-thread">
                 {chat.messages.map((m) => (
                   <div key={m.id} className={`dd-msg dd-msg-${m.role}`}>
-                    {m.text && <div className="dd-msg-text">{m.text}</div>}
+                    {m.text &&
+                      (m.role === 'assistant' ? (
+                        // model output: markdown + LaTeX, sanitised
+                        <div className="dd-msg-text">
+                          <Markdown text={m.text} />
+                        </div>
+                      ) : (
+                        // the user's own words stay plain text
+                        <div className="dd-msg-text">{m.text}</div>
+                      ))}
                     {m.streaming && !m.text && <span className="dd-typing">…</span>}
                     {m.error && <div className="dd-msg-error">{m.error}</div>}
                   </div>
@@ -162,56 +267,51 @@ export function SelectionPanel({
             </div>
           )}
 
-          {chat.messages.length > 0 ? (
-            <div className="dd-ask-row">
-              <input
-                className="dd-ask-input"
-                value={followUp}
-                placeholder="Ask a follow-up…"
-                onChange={(e) => setFollowUp(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && followUp.trim() && !chat.busy) {
-                    const q = followUp.trim();
-                    setFollowUp('');
-                    chatStore.ask(q);
-                  }
-                }}
+          {/* Only models whose provider has a key are offered; without any key
+              the control becomes a prompt to add one. */}
+          <div className="dd-modelbar">
+            {hasKey ? (
+              <select
+                className="dd-modelpick"
+                value={active?.id ?? ''}
+                onChange={(e) => settingsStore.setModel(e.target.value)}
                 disabled={chat.busy}
-              />
-              <button
-                className="dd-primary"
-                disabled={chat.busy || !followUp.trim()}
-                onClick={() => {
-                  const q = followUp.trim();
-                  setFollowUp('');
-                  chatStore.ask(q);
-                }}
+                title="Model"
               >
-                Send
+                {available.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <button className="dd-modelpick dd-modelpick-empty" onClick={onOpenSettings}>
+                Add an API key to choose a model →
               </button>
-            </div>
-          ) : (
-            <button
-              className="dd-primary"
-              disabled={chat.busy}
-              onClick={() => chatStore.ask(DEFAULT_ASK)}
-            >
-              {chat.busy
-                ? 'Working…'
-                : `Ask drawde about ${regions.length} item${regions.length > 1 ? 's' : ''}`}
-            </button>
-          )}
+            )}
+          </div>
 
-          {chat.busy && (
-            <button className="dd-linkbtn" onClick={() => chatStore.stop()}>
-              stop
-            </button>
-          )}
-          {!chat.busy && chat.messages.length > 0 && (
-            <button className="dd-linkbtn" onClick={() => chatStore.clear()}>
-              clear chat
-            </button>
-          )}
+          {/* The composer is the only way in: the question is always the user's
+              own words, never a canned prompt on their behalf. */}
+          <Composer
+            value={followUp}
+            onChange={setFollowUp}
+            busy={chat.busy}
+            placeholder={
+              chat.messages.length > 0
+                ? 'Ask a follow-up…'
+                : regions.length > 0
+                  ? `Ask about ${regions.length} selection${regions.length > 1 ? 's' : ''}…`
+                  : 'Ask drawde…'
+            }
+            onSend={() => {
+              const q = followUp.trim();
+              if (!q) return;
+              setFollowUp('');
+              chatStore.ask(q);
+            }}
+            onStop={() => chatStore.stop()}
+          />
         </footer>
       )}
     </aside>

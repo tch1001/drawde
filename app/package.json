@@ -17,6 +17,7 @@
   "description": "",
   "devDependencies": {
     "@playwright/test": "^1.62.0",
+    "@types/dompurify": "^3.0.5",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
@@ -42,7 +43,10 @@
     "@embedpdf/plugin-viewport": "^2.14.4",
     "@embedpdf/plugin-zoom": "^2.14.4",
     "@huggingface/transformers": "^3.8.1",
+    "dompurify": "^3.4.12",
     "image-js": "^1.7.0",
+    "katex": "^0.18.1",
+    "marked": "^18.0.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

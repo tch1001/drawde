@@ -334,18 +334,115 @@ kbd {
 }
 .dd-progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
 
-.dd-ask-row { display: flex; gap: .4rem; }
-.dd-ask-input {
-  flex: 1; min-width: 0; background: var(--panel2); color: var(--text);
-  border: 1px solid var(--border); border-radius: 8px;
-  padding: .5rem .6rem; font-size: .84rem;
+/* ── rendered LaTeX on a card ───────────────────────────── */
+.dd-latex {
+  position: relative;
+  display: flex; align-items: center; gap: .5rem;
+  min-height: 34px;
 }
-.dd-ask-input:focus { outline: none; border-color: var(--accent); }
-.dd-linkbtn {
-  display: block; margin: .5rem auto 0; background: none; border: none;
-  color: var(--muted); font-size: .76rem; text-decoration: underline; cursor: pointer;
+.dd-latex .dd-tex { flex: 1; min-width: 0; overflow-x: auto; color: var(--text); }
+.dd-tex-fallback {
+  flex: 1; min-width: 0; color: var(--yellow, #e0af68);
+  font-family: ui-monospace, monospace; font-size: .72rem;
+  white-space: pre-wrap; word-break: break-word;
 }
-.dd-linkbtn:hover { color: var(--pink); }
+.dd-latex-edit {
+  flex: none; background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 5px;
+  font-size: .68rem; padding: .12rem .4rem; cursor: pointer;
+}
+.dd-latex-edit:hover { color: var(--text); border-color: var(--muted); }
+
+/* editor modal bits */
+.dd-tex-label {
+  display: block; font-size: .72rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; margin: .8rem 0 .3rem;
+}
+.dd-tex-label:first-child { margin-top: 0; }
+.dd-tex-crop {
+  display: block; width: 100%; height: auto;
+  background: #fff; border-radius: 6px; border: 1px solid var(--border);
+}
+.dd-tex-preview {
+  background: #fff; color: #111; border-radius: 6px;
+  padding: .9rem .7rem; overflow-x: auto; min-height: 56px;
+  display: flex; align-items: center; justify-content: center;
+}
+.dd-tex-preview .dd-tex-fallback { color: #b45309; }
+.dd-tex-input {
+  width: 100%; resize: vertical;
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px;
+  padding: .5rem .6rem; font-family: ui-monospace, monospace;
+  font-size: .78rem; line-height: 1.5;
+}
+.dd-tex-input:focus { outline: none; border-color: var(--accent); }
+
+/* ── model picker ───────────────────────────────────────── */
+.dd-modelbar { margin-bottom: .45rem; }
+.dd-modelpick {
+  width: 100%; background: var(--panel2); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 7px;
+  padding: .3rem .5rem; font-size: .76rem; cursor: pointer;
+}
+.dd-modelpick:focus { outline: none; border-color: var(--accent); }
+.dd-modelpick-empty { text-align: left; color: var(--accent); }
+
+/* ── rendered model output ──────────────────────────────── */
+.dd-md { font-size: .84rem; line-height: 1.55; }
+.dd-md > :first-child { margin-top: 0; }
+.dd-md > :last-child { margin-bottom: 0; }
+.dd-md p { margin: 0 0 .6rem; }
+.dd-md h1, .dd-md h2, .dd-md h3 { font-size: .92rem; margin: .9rem 0 .4rem; }
+.dd-md ul, .dd-md ol { padding-left: 1.2rem; margin: 0 0 .6rem; }
+.dd-md li { margin-bottom: .25rem; }
+.dd-md code {
+  background: var(--panel2); border-radius: 4px; padding: .05em .3em;
+  font-size: .92em; font-family: ui-monospace, monospace;
+}
+.dd-md pre {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 7px;
+  padding: .6rem .7rem; overflow-x: auto; margin: 0 0 .6rem;
+}
+.dd-md pre code { background: none; padding: 0; }
+.dd-md blockquote {
+  margin: 0 0 .6rem; padding-left: .7rem;
+  border-left: 2px solid var(--border); color: var(--muted);
+}
+.dd-md table { border-collapse: collapse; font-size: .78rem; margin-bottom: .6rem; }
+.dd-md th, .dd-md td { border: 1px solid var(--border); padding: .25rem .45rem; }
+/* display math can overflow a narrow panel — scroll it, don't clip the panel */
+.dd-md .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2rem 0; margin: .5rem 0; }
+.dd-md .katex { font-size: 1em; }
+
+/* ── composer: growing textarea + small arrow, Cursor-style ─ */
+.dd-composer {
+  display: flex; align-items: flex-end; gap: .4rem;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 10px; padding: .35rem .35rem .35rem .6rem;
+}
+.dd-composer:focus-within { border-color: var(--accent); }
+
+.dd-composer-input {
+  flex: 1; min-width: 0; resize: none;
+  background: transparent; color: var(--text); border: none;
+  padding: .3rem 0; font: inherit; font-size: .84rem; line-height: 1.45;
+  /* height is driven by JS (grow to 5 lines, then scroll) */
+  overflow-y: hidden;
+}
+.dd-composer-input:focus { outline: none; }
+.dd-composer-input::placeholder { color: var(--muted); }
+
+.dd-send {
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  border: none; cursor: pointer;
+  background: var(--accent); color: #0f1117;
+  font-size: .9rem; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: opacity .12s, background .12s;
+}
+.dd-send:disabled { opacity: .35; cursor: default; }
+.dd-send:not(:disabled):hover { filter: brightness(1.1); }
 
 /* ── settings modal ─────────────────────────────────────── */
 .dd-modal-scrim {

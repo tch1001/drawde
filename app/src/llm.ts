@@ -1,137 +1,64 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { useSyncExternalStore } from 'react';
+import { providerOf, settingsStore, type ModelDef } from './providers';
 import type { Region } from './types';
 
 /**
- * LLM access, behind a transport seam.
+ * LLM access across providers, behind one transport seam.
  *
- * Today: BrowserTransport — the user's own key, called straight from the page.
- * That works because api.anthropic.com serves CORS when the request carries
- * `anthropic-dangerous-direct-browser-access`, which the SDK sends when
- * `dangerouslyAllowBrowser` is set (verified against the live API by preflight:
- * without the header the origin is rejected outright).
+ * All calls go straight from the page with the user's own key. That works
+ * because every provider here serves CORS to browsers (verified by live
+ * preflight per endpoint — see providers.ts). The user supplies the key, so a
+ * compromise costs them their key rather than our account; the real residual
+ * risk is XSS, which is why model output is sanitised before render.
  *
- * The scary flag name is about shipping YOUR key to users. Here the user pastes
- * their own, so a compromise costs them their key, not our account. The real
- * risks are XSS (we render untrusted PDF content — never innerHTML model output)
- * and the absence of a client-side spend ceiling.
- *
- * Later: a ServerTransport posting to our own endpoint for a metered tier. Both
- * consume the same buildPrompt() output, so only this file changes.
+ * A metered ServerTransport can be added later without touching prompt building.
  */
-
-const KEY_STORAGE = 'drawde.anthropic.key';
-const MODEL = 'claude-opus-5';
-
-/* ── key store ─────────────────────────────────────────────────────────── */
-
-class ApiKeyStore {
-  private listeners = new Set<() => void>();
-  private snapshot: { key: string | null; persisted: boolean } = {
-    key: null,
-    persisted: false,
-  };
-
-  constructor() {
-    // sessionStorage by default: the key dies with the tab. localStorage only
-    // if the user explicitly asked us to remember it.
-    const s = sessionStorage.getItem(KEY_STORAGE);
-    const l = localStorage.getItem(KEY_STORAGE);
-    this.snapshot = { key: s ?? l, persisted: Boolean(l) };
-  }
-
-  subscribe = (fn: () => void) => {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  };
-  getSnapshot = () => this.snapshot;
-
-  get key() {
-    return this.snapshot.key;
-  }
-
-  set(key: string | null, persist: boolean) {
-    sessionStorage.removeItem(KEY_STORAGE);
-    localStorage.removeItem(KEY_STORAGE);
-    if (key) {
-      (persist ? localStorage : sessionStorage).setItem(KEY_STORAGE, key);
-    }
-    this.snapshot = { key, persisted: Boolean(key && persist) };
-    this.listeners.forEach((l) => l());
-  }
-}
-
-export const apiKeyStore = new ApiKeyStore();
-export function useApiKey() {
-  return useSyncExternalStore(apiKeyStore.subscribe, apiKeyStore.getSnapshot);
-}
-
-/* ── prompt ────────────────────────────────────────────────────────────── */
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
   text: string;
 }
 
-/**
- * Build the message list. Regions come first and stay byte-identical across a
- * conversation so they form a cacheable prefix — follow-up questions about the
- * same selection then bill at cache-read rates.
- */
-export function buildMessages(regions: Region[], history: ChatTurn[], question: string) {
-  const content: any[] = [];
-
-  regions.forEach((r, i) => {
-    const label = `Selection ${i + 1} (page ${r.pageIndex + 1}, ${r.kind})`;
-    if (r.kind === 'box' && r.imageBase64) {
-      content.push({ type: 'text', text: label });
-      content.push({
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/png', data: r.imageBase64 },
-      });
-      if (r.latex) {
-        content.push({
-          type: 'text',
-          text: `Local OCR read this as LaTeX (may contain errors — trust the image where they disagree):\n${r.latex}`,
-        });
-      }
-    }
-    if (r.text) {
-      content.push({ type: 'text', text: `${label} — text layer:\n${r.text}` });
-    }
-  });
-
-  // Cache the selections; the question after this point varies per turn.
-  if (content.length) {
-    content[content.length - 1] = {
-      ...content[content.length - 1],
-      cache_control: { type: 'ephemeral' },
-    };
-  }
-
-  const messages: any[] = [];
-  if (content.length) messages.push({ role: 'user', content });
-  history.forEach((t) => messages.push({ role: t.role, content: t.text }));
-  messages.push({ role: 'user', content: question });
-  return messages;
-}
-
 const SYSTEM = `You are drawde, a reading assistant for theoretical physics papers.
 
 The user has selected regions of a paper — usually equations, sometimes prose.
-Each selection is given as a high-resolution crop, optionally with local OCR
-output and the PDF text layer beneath it. The image is authoritative: OCR and
-the text layer are noisy hints for disambiguating symbols (v vs nu, a vs alpha),
-not sources of truth.
+Each selection is given as a high-resolution crop, optionally with OCR output
+and the PDF text layer beneath it. The image is authoritative: OCR and the text
+layer are noisy hints for disambiguating symbols (v vs nu, a vs alpha), not
+sources of truth.
 
-When asked to fill in a derivation gap, show the intermediate steps that the
-paper suppressed, in the paper's own notation and conventions. State any
-assumption you had to make. If a step genuinely cannot be reconstructed from
-what is shown, say so rather than inventing it.
+When asked to fill in a derivation gap, show the intermediate steps the paper
+suppressed, in the paper's own notation and conventions. State any assumption
+you had to make. If a step genuinely cannot be reconstructed from what is shown,
+say so rather than inventing it.
 
 Write mathematics as LaTeX delimited by $...$ or $$...$$.`;
 
-/* ── transport ─────────────────────────────────────────────────────────── */
+/** Selections as provider-neutral parts, so each adapter can shape them. */
+interface Part {
+  kind: 'text' | 'image';
+  text?: string;
+  base64?: string;
+}
+
+function selectionParts(regions: Region[]): Part[] {
+  const parts: Part[] = [];
+  regions.forEach((r, i) => {
+    const label = `Selection ${i + 1} (page ${r.pageIndex + 1}, ${r.kind})`;
+    if (r.kind === 'box' && r.imageBase64) {
+      parts.push({ kind: 'text', text: label });
+      parts.push({ kind: 'image', base64: r.imageBase64 });
+      if (r.latex) {
+        parts.push({
+          kind: 'text',
+          text: `OCR read this as LaTeX (may contain errors — trust the image where they disagree):\n${r.latex}`,
+        });
+      }
+    }
+    if (r.text) parts.push({ kind: 'text', text: `${label} — text layer:\n${r.text}` });
+  });
+  return parts;
+}
 
 export interface LlmTransport {
   stream(
@@ -143,7 +70,189 @@ export interface LlmTransport {
   ): Promise<string>;
 }
 
-class BrowserTransport implements LlmTransport {
+/* ── shared SSE reader for the OpenAI-shaped APIs ──────────────────────── */
+
+async function readSse(
+  res: Response,
+  onEvent: (json: any) => void,
+  signal?: AbortSignal,
+) {
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`${res.status} ${res.statusText}${detail ? ` — ${detail.slice(0, 300)}` : ''}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => {});
+      break;
+    }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith('data:')) continue;
+      const payload = t.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        onEvent(JSON.parse(payload));
+      } catch {
+        /* keep-alive or partial frame — ignore */
+      }
+    }
+  }
+}
+
+/* ── adapters ──────────────────────────────────────────────────────────── */
+
+async function streamAnthropic(
+  model: ModelDef,
+  apiKey: string,
+  regions: Region[],
+  history: ChatTurn[],
+  question: string,
+  onDelta: (t: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+  const content: any[] = selectionParts(regions).map((p) =>
+    p.kind === 'image'
+      ? { type: 'image', source: { type: 'base64', media_type: 'image/png', data: p.base64 } }
+      : { type: 'text', text: p.text },
+  );
+  // Cache the selections: follow-ups about the same equations bill at read rates.
+  if (content.length) {
+    content[content.length - 1] = {
+      ...content[content.length - 1],
+      cache_control: { type: 'ephemeral' },
+    };
+  }
+
+  const messages: any[] = [];
+  if (content.length) messages.push({ role: 'user', content });
+  history.forEach((t) => messages.push({ role: t.role, content: t.text }));
+  messages.push({ role: 'user', content: question });
+
+  let full = '';
+  const stream = client.messages.stream(
+    { model: model.id, max_tokens: 8000, system: SYSTEM, messages },
+    { signal },
+  );
+  stream.on('text', (d: string) => {
+    full += d;
+    onDelta(d);
+  });
+  const final = await stream.finalMessage();
+  if (final.stop_reason === 'refusal') throw new Error('The model declined this request.');
+  return full;
+}
+
+/** OpenAI and Moonshot share the chat-completions shape. */
+async function streamOpenAiCompatible(
+  model: ModelDef,
+  apiKey: string,
+  baseUrl: string,
+  regions: Region[],
+  history: ChatTurn[],
+  question: string,
+  onDelta: (t: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const content: any[] = selectionParts(regions).map((p) =>
+    p.kind === 'image'
+      ? { type: 'image_url', image_url: { url: `data:image/png;base64,${p.base64}` } }
+      : { type: 'text', text: p.text },
+  );
+
+  const messages: any[] = [{ role: 'system', content: SYSTEM }];
+  if (content.length) messages.push({ role: 'user', content });
+  history.forEach((t) => messages.push({ role: t.role, content: t.text }));
+  messages.push({ role: 'user', content: question });
+
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: model.id, messages, stream: true, max_tokens: 8000 }),
+    signal,
+  });
+
+  let full = '';
+  await readSse(
+    res,
+    (json) => {
+      const d = json?.choices?.[0]?.delta?.content;
+      if (typeof d === 'string' && d) {
+        full += d;
+        onDelta(d);
+      }
+    },
+    signal,
+  );
+  return full;
+}
+
+async function streamGemini(
+  model: ModelDef,
+  apiKey: string,
+  regions: Region[],
+  history: ChatTurn[],
+  question: string,
+  onDelta: (t: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const parts: any[] = selectionParts(regions).map((p) =>
+    p.kind === 'image'
+      ? { inline_data: { mime_type: 'image/png', data: p.base64 } }
+      : { text: p.text },
+  );
+
+  const contents: any[] = [];
+  if (parts.length) contents.push({ role: 'user', parts });
+  history.forEach((t) =>
+    contents.push({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.text }] }),
+  );
+  contents.push({ role: 'user', parts: [{ text: question }] });
+
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}` +
+    `:streamGenerateContent?alt=sse`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({
+      contents,
+      systemInstruction: { parts: [{ text: SYSTEM }] },
+    }),
+    signal,
+  });
+
+  let full = '';
+  await readSse(
+    res,
+    (json) => {
+      const cand = json?.candidates?.[0];
+      for (const p of cand?.content?.parts ?? []) {
+        if (typeof p?.text === 'string' && p.text) {
+          full += p.text;
+          onDelta(p.text);
+        }
+      }
+    },
+    signal,
+  );
+  return full;
+}
+
+/* ── dispatch ──────────────────────────────────────────────────────────── */
+
+class MultiProviderTransport implements LlmTransport {
   async stream(
     regions: Region[],
     history: ChatTurn[],
@@ -151,35 +260,34 @@ class BrowserTransport implements LlmTransport {
     onDelta: (text: string) => void,
     signal?: AbortSignal,
   ): Promise<string> {
-    const apiKey = apiKeyStore.key;
-    if (!apiKey) throw new Error('No API key set. Open Settings and add one.');
-
-    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-    let full = '';
-
-    const stream = client.messages.stream(
-      {
-        model: MODEL,
-        max_tokens: 8000,
-        system: SYSTEM,
-        messages: buildMessages(regions, history, question),
-      },
-      { signal },
-    );
-
-    stream.on('text', (delta: string) => {
-      full += delta;
-      onDelta(delta);
-    });
-
-    const final = await stream.finalMessage();
-    // A refusal comes back as a normal 200 with empty/partial content — surface
-    // it rather than showing the user a blank reply.
-    if (final.stop_reason === 'refusal') {
-      throw new Error('The model declined this request.');
+    const model = settingsStore.activeModel();
+    if (!model) {
+      throw new Error('No model available. Open Settings and add an API key.');
     }
-    return full;
+    const apiKey = settingsStore.keyFor(model.provider);
+    if (!apiKey) {
+      throw new Error(
+        `No ${providerOf(model.provider).label} API key set. Open Settings and add one.`,
+      );
+    }
+
+    switch (model.provider) {
+      case 'anthropic':
+        return streamAnthropic(model, apiKey, regions, history, question, onDelta, signal);
+      case 'openai':
+        return streamOpenAiCompatible(
+          model, apiKey, 'https://api.openai.com/v1',
+          regions, history, question, onDelta, signal,
+        );
+      case 'moonshot':
+        return streamOpenAiCompatible(
+          model, apiKey, 'https://api.moonshot.ai/v1',
+          regions, history, question, onDelta, signal,
+        );
+      case 'gemini':
+        return streamGemini(model, apiKey, regions, history, question, onDelta, signal);
+    }
   }
 }
 
-export const llm: LlmTransport = new BrowserTransport();
+export const llm: LlmTransport = new MultiProviderTransport();
