@@ -1,62 +1,140 @@
+<div align="center">
+
 # drawde
 
-A theoretical-physics reading assistant. Upload a paper (PDF) and either:
+**Read physics papers with an AI that can see the equations.**
 
-1. **Fill in the gaps** — highlight the jump between Eq. (12) and Eq. (13) and have an AI expand the suppressed algebra, using the *whole paper* as context (notation, conventions, ℏ=c=1, metric signature).
-2. **LaTeX playground** — an editor beside the paper so you never hand-transcribe `\tilde{\mathcal{G}}^{\mu\nu}_{ab}` again.
+Box any equation in a PDF, and ask about it. Equation OCR runs entirely in your
+browser; the chat uses your own API key.
 
-Started 2026-07-29. Owner: capcutprojects@gmail.com.
+</div>
 
-## Why this is not another "AI physics solver"
+<div align="center">
+  <img src="docs/screenshot.png" alt="drawde: an equation from Maldacena's AdS/CFT paper boxed in the viewer, recognised as LaTeX, and explained by the model in the side panel" width="100%">
+</div>
 
-Market scan (2026-07-29) found the space is crowded at the **homework-solver** end and empty at the **research** end:
+---
 
-- Homework solvers (physicsai.chat, EaseMate, LearnFast, TutorBin, Edubrain, NoteGPT, physicsaisolver.net): "photo of a textbook problem → steps". Student-facing, no document context.
-- PDF→LaTeX OCR (Mathpix, Nougat, I Love My LaTeX, TeX64): solved problem, rentable — **do not build OCR from scratch**.
-- LaTeX playgrounds (8gwifi, TexMate, CodeCogs, LaTeX4technics): equation-snippet editors, not tied to any source document.
-- **Nobody ships "expand the suppressed steps in *this paper*"**. Academic work exists on "equational gap filling" (arXiv 2605.12524) but no product. That is the differentiator.
+## Why
 
-The wedge: **the PDF is the first-class object.** Selection → AI → editable LaTeX, all anchored to the paper, with the paper's own notation.
+Papers suppress steps. *"It can be shown that…"*, *"after a straightforward
+calculation…"* — and the reader is left reconstructing three pages of algebra.
 
-## Roadmap
+The tools that exist solve the wrong halves of this. Homework solvers take a
+photo of a problem and hand back an answer, with no idea what paper it came
+from. PDF→LaTeX converters transcribe a document and stop there. LaTeX editors
+are snippet playgrounds detached from any source.
 
-| Phase | Status | Description |
-|---|---|---|
-| 1. PDF reader survey | ✅ done | Comparison site of viewer technologies — see `docs/research-pdf-viewers.md` |
-| 2. Custom viewer | ✅ v1 done | Own viewer on EmbedPDF (`app/`): rectangle + text selection → `Region`s, "add to chat" panel |
-| 3. OCR/LLM pipeline | 📋 researched | Selection → LaTeX. See `docs/research-ocr.md`. Comparison demo still to build |
-| 4. Gap-filling AI | ⏳ not started | Region + paper context → expanded derivation |
-| 5. LaTeX playground | ⏳ not started | Paper-aware editor with symbol autocomplete |
-| 6. Annotation export | ⏳ not started | drawde annotations embedded in PDF, degrading gracefully |
+drawde makes **the paper the first-class object**: select a region, and the
+question is answered with the crop, the OCR'd LaTeX, and the surrounding
+context all in hand.
 
-## Layout
+## Open any paper from the address bar
+
+Put a PDF link straight after the host:
 
 ```
-drawde/
-├── README.md               # this file
-├── HANDOFF.md              # ← START HERE in a new session: live state, running processes
-├── docs/
-│   ├── architecture-notes.md      # the design brainstorm (layer stack, Region, AI-as-user, PDF metadata)
-│   ├── research-pdf-viewers.md    # phase 1 findings
-│   ├── embedpdf-api-notes.md      # live API probe of EmbedPDF — read before building
-│   └── research-ocr.md            # phase 3 findings (pending agent)
-├── app/                    # ← phase 2: the drawde viewer (React + Vite + EmbedPDF headless)
-├── site/                   # served root: hub index + symlinks to app/dist and the phase-1 demos
-├── explorations/
-│   └── pdf-readers/        # phase 1 comparison site (7 working demos)
-└── viewer/                 # leftover API probe, not the app
+drawde.tchlabs.net/https://arxiv.org/pdf/1907.04392
 ```
 
-## Running it
+Several shapes work, because none of them should need explaining:
+
+| You paste | What happens |
+|---|---|
+| `…/https://arxiv.org/pdf/1907.04392` | opens it |
+| `…/arxiv.org/pdf/1907.04392` | `https://` is optional |
+| `…/https://arxiv.org/abs/2510.01051` | abstract pages resolve to the PDF |
+| `…/2510.01051` | a bare arXiv id is enough |
+| `…/` | landing page — drag in a PDF, or open the demo |
+
+Dropped files never leave your machine. Remote PDFs are fetched by your browser
+directly when the host allows it (arXiv does), and proxied through the server
+only when it doesn't.
+
+## How it works
+
+```
+   ▭ box an equation
+        │
+        ├─ high-DPI crop      ─┐
+        ├─ Texo OCR → LaTeX    ├─→  one prompt  →  streamed answer
+        └─ PDF text layer     ─┘
+```
+
+Three channels rather than one, because they fail differently. The **image** is
+authoritative for layout. **OCR** gives editable LaTeX. The **text layer** —
+glyph soup though it is — disambiguates symbols the image alone leaves
+ambiguous (`ν` vs `v`, `α` vs `a`).
+
+It works. In the screenshot above the model notices the OCR misread `dU²` as
+`dL²` and corrects it, because it can see the crop as well as the transcription.
+
+**Equation OCR is local.** [Texo](https://github.com/alephpi/Texo) (20M params,
+~80 MB, ONNX via transformers.js) runs in a Web Worker — no API key, no upload,
+~1 s per equation once warm.
+
+**Chat is bring-your-own-key.** Anthropic, OpenAI, Gemini and Moonshot are
+supported; only models whose provider has a key are offered. Keys live in
+`sessionStorage` by default (gone when the tab closes), `localStorage` only if
+you ask, and each is sent only to its own provider. drawde has no backend that
+sees them.
+
+## Features
+
+- **Region + text selection**, unified — both produce the same `Region` object
+- **Lock selection** to build up multi-part context (or hold <kbd>Shift</kbd>)
+- **Editable OCR** — a modal with the original crop, live KaTeX preview, and the source
+- **Rendered answers** — markdown + LaTeX, sanitised before display
+- **Mobile** — single-pane layout, overlay panels, pan/pinch
+- Outline, page thumbnails, in-document search, keyboard navigation
+
+## Run it locally
 
 ```bash
-cd app && npx vite build          # build the viewer into app/dist
-cd ../site && python3 -m http.server 8787 --bind 127.0.0.1
-cloudflared tunnel --url http://127.0.0.1:8787
+git clone git@github.com:tch1001/drawde.git
+cd drawde/app && npm install && npx vite build
+cd .. && node server/serve.mjs --port 8080
 ```
+
+Then open <http://127.0.0.1:8080/>.
+
+The server exists for two things a static host can't do on its own: serving the
+app for *any* path (so the URL-prefix trick works), and `/_proxy` for PDFs whose
+host refuses cross-origin requests.
+
 For development with hot reload: `cd app && npx vite` (port 5180).
 
-## Development notes
+## Tests
 
-- The user is **not on the host machine** — everything must be exposed via `cloudflared` tunnel to be inspected. See `HANDOFF.md` for the current URL and how to restart.
-- The user wants to *see and click* things. Ship visible demos, not descriptions.
+```bash
+cd app && npm run test:e2e     # typecheck, then 22 Playwright tests
+```
+
+The suite drives **real input** — `page.mouse`, `page.keyboard`, touch taps —
+never synthetic events. That is deliberate: an early bug where the browser's
+native image-drag silently cancelled the pointer stream passed every synthetic
+test and failed under an actual mouse.
+
+`npm run test:e2e` typechecks first, because `vite build` does not — it once
+happily bundled a missing import that would have crashed at runtime.
+
+## Stack
+
+| | |
+|---|---|
+| Viewer | [EmbedPDF](https://github.com/embedpdf/embed-pdf-viewer) headless plugins (PDFium/WASM) |
+| OCR | [Texo](https://github.com/alephpi/Texo) / `alephpi/FormulaNet` via `@huggingface/transformers` |
+| Maths | KaTeX |
+| UI | React + Vite |
+
+## Licence note
+
+Texo is **AGPL-3.0** and its weights are shipped to the browser. OCR sits behind
+an `OcrEngine` interface so it can be swapped for a permissively-licensed or
+server-side model if that matters for your deployment.
+
+---
+
+<div align="center">
+<sub>Built with <a href="https://claude.com/claude-code">Claude Code</a>.</sub>
+</div>

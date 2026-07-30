@@ -20,6 +20,100 @@ body {
   height: 100%; display: flex; align-items: center; justify-content: center;
   gap: .8rem; color: var(--muted); font-size: .9rem;
 }
+.dd-boot-error {
+  flex-direction: column; text-align: center; padding: 2rem 1.25rem;
+  max-width: 620px; margin: 0 auto;
+}
+.dd-boot-error h1 { font-size: 1.2rem; color: var(--text); margin: 0; }
+.dd-boot-error p { margin: 0; line-height: 1.6; }
+.dd-boot-error code {
+  display: block; margin-top: .4rem; word-break: break-all;
+  background: var(--panel2); border-radius: 6px; padding: .4rem .5rem; color: var(--accent);
+}
+.dd-boot-error .dd-primary { width: auto; padding: .5rem 1.1rem; text-decoration: none; margin-top: .6rem; }
+.dd-boot-hint { font-size: .82rem; }
+
+/* ── landing page ───────────────────────────────────────── */
+.dd-landing {
+  min-height: 100%; overflow-y: auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 2.5rem 1.25rem;
+  transition: background .15s;
+}
+.dd-landing.dragging { background: rgba(122,162,247,.08); }
+.dd-landing-inner { width: 100%; max-width: 560px; text-align: center; }
+
+.dd-landing-logo { font-size: 2.6rem; margin: 0 0 .3rem; letter-spacing: -.02em; }
+.dd-landing-logo span { color: var(--accent); }
+.dd-landing-tag {
+  color: var(--muted); font-size: .95rem; line-height: 1.6;
+  margin: 0 auto 1.8rem; max-width: 420px;
+}
+
+.dd-drop {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  width: 100%; padding: 2rem 1rem; cursor: pointer;
+  background: var(--panel); color: var(--text);
+  border: 1.5px dashed var(--border); border-radius: 12px;
+  transition: border-color .15s, background .15s;
+}
+.dd-drop:hover, .dd-landing.dragging .dd-drop {
+  border-color: var(--accent); background: var(--panel2);
+}
+.dd-drop-icon {
+  font-size: 1.5rem; color: var(--accent); line-height: 1;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: .4rem;
+}
+.dd-drop b { font-size: .98rem; }
+.dd-drop em { font-style: normal; font-size: .8rem; color: var(--muted); }
+
+.dd-landing-error { color: var(--pink); font-size: .84rem; margin: .7rem 0 0; }
+
+.dd-landing-or {
+  display: flex; align-items: center; gap: .8rem;
+  margin: 1.4rem 0 .9rem; color: var(--muted); font-size: .78rem;
+}
+.dd-landing-or::before, .dd-landing-or::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+.dd-landing-urlrow { display: flex; gap: .5rem; }
+.dd-landing-url {
+  flex: 1; min-width: 0;
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: .6rem .7rem; font-size: .88rem;
+}
+.dd-landing-url:focus { outline: none; border-color: var(--accent); }
+.dd-landing-urlrow .dd-primary { width: auto; padding: 0 1.2rem; }
+
+.dd-landing-trick {
+  margin-top: 1.8rem; padding: 1rem;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  text-align: left; font-size: .84rem; color: var(--muted); line-height: 1.6;
+}
+.dd-landing-trick p { margin: 0; }
+.dd-landing-trick b { color: var(--text); }
+.dd-landing-example {
+  display: block; margin: .6rem 0; padding: .5rem .6rem;
+  background: var(--bg); border-radius: 6px;
+  color: var(--accent); font-size: .78rem; word-break: break-all;
+}
+.dd-landing-variants { font-size: .8rem; }
+.dd-landing-trick code {
+  background: var(--panel2); border-radius: 4px; padding: .05em .3em;
+  font-size: .92em; color: var(--accent);
+}
+.dd-landing-example code { background: none; padding: 0; }
+
+.dd-landing .dd-linkbtn { margin-top: 1.4rem; font-size: .85rem; }
+.dd-landing-foot {
+  margin-top: 1.6rem; font-size: .76rem; color: var(--muted);
+  line-height: 1.6; opacity: .8;
+}
 .dd-spinner {
   width: 18px; height: 18px; border-radius: 50%;
   border: 2px solid var(--border); border-top-color: var(--accent);
@@ -334,24 +428,32 @@ kbd {
 }
 .dd-progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
 
-/* ── rendered LaTeX on a card ───────────────────────────── */
+/* ── rendered LaTeX ─────────────────────────────────────────
+   Maths always renders as black-on-white in a rounded box, the way it
+   appears on the page. White glyphs on the dark panel read as inverted
+   and fight the crop sitting directly above them. */
 .dd-latex {
   position: relative;
   display: flex; align-items: center; gap: .5rem;
-  min-height: 34px;
+  min-height: 34px; margin-top: .45rem;
+  background: #fff; border-radius: 7px;
+  padding: .5rem .55rem;
 }
-.dd-latex .dd-tex { flex: 1; min-width: 0; overflow-x: auto; color: var(--text); }
+.dd-latex .dd-tex {
+  flex: 1; min-width: 0; overflow-x: auto;
+  color: #111;
+}
 .dd-tex-fallback {
-  flex: 1; min-width: 0; color: var(--yellow, #e0af68);
+  flex: 1; min-width: 0; color: #b45309;
   font-family: ui-monospace, monospace; font-size: .72rem;
   white-space: pre-wrap; word-break: break-word;
 }
 .dd-latex-edit {
-  flex: none; background: transparent; color: var(--muted);
-  border: 1px solid var(--border); border-radius: 5px;
+  flex: none; background: #fff; color: #6b7280;
+  border: 1px solid #d1d5db; border-radius: 5px;
   font-size: .68rem; padding: .12rem .4rem; cursor: pointer;
 }
-.dd-latex-edit:hover { color: var(--text); border-color: var(--muted); }
+.dd-latex-edit:hover { color: #111; border-color: #9ca3af; }
 
 /* editor modal bits */
 .dd-tex-label {
@@ -411,9 +513,22 @@ kbd {
 }
 .dd-md table { border-collapse: collapse; font-size: .78rem; margin-bottom: .6rem; }
 .dd-md th, .dd-md td { border: 1px solid var(--border); padding: .25rem .45rem; }
-/* display math can overflow a narrow panel — scroll it, don't clip the panel */
-.dd-md .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2rem 0; margin: .5rem 0; }
-.dd-md .katex { font-size: 1em; }
+/* Maths in model output follows the same rule as the OCR card: black on white.
+   Display math gets its own box; inline maths gets a subtle pill so a formula
+   mid-sentence stays legible without shouting. */
+.dd-md .katex-display {
+  overflow-x: auto; overflow-y: hidden;
+  margin: .6rem 0; padding: .7rem .6rem;
+  background: #fff; border-radius: 7px;
+  color: #111;
+}
+.dd-md .katex { font-size: 1em; color: #111; }
+.dd-md :not(.katex-display) > .katex {
+  background: #fff; border-radius: 4px;
+  padding: .05em .28em;
+}
+/* the fallback for unparseable maths stays legible on white too */
+.dd-md .dd-tex-fallback { color: #b45309; }
 
 /* ── composer: growing textarea + small arrow, Cursor-style ─ */
 .dd-composer {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPluginRegistration } from '@embedpdf/core';
 import { EmbedPDF } from '@embedpdf/core/react';
 import { useDocumentState } from '@embedpdf/core/react';
@@ -37,12 +37,16 @@ import { PAN_MODE } from './modes';
 import { BOX_MODE, TEXT_MODE } from './modes';
 import { nextRegionId, regionStore, useRegions } from './store';
 import type { Region } from './types';
+import { resolvePdfSource, fetchPdf } from './pdf-source';
+import { Landing } from './Landing';
 
-const PDF_URL = './sample.pdf';
-
-const plugins = [
+/**
+ * Plugin list. Built per document because the PDF URL comes from the address
+ * bar (drawde.example/https://arxiv.org/pdf/...), not a constant.
+ */
+const buildPlugins = (pdfUrl: string) => [
   createPluginRegistration(DocumentManagerPluginPackage, {
-    initialDocuments: [{ url: PDF_URL, documentId: 'paper' }],
+    initialDocuments: [{ url: pdfUrl, documentId: 'paper' }],
   }),
   createPluginRegistration(ViewportPluginPackage),
   createPluginRegistration(ScrollPluginPackage),
@@ -660,8 +664,55 @@ function ChatButton({ open, onToggle }: { open: boolean; onToggle: () => void })
   );
 }
 
+/**
+ * Resolves the target PDF from the address bar and loads it.
+ *
+ * The blob is fetched here rather than handed to EmbedPDF as a URL so that a
+ * blocked or missing document surfaces as a readable message instead of an
+ * empty viewer, and so the proxy fallback can kick in.
+ */
+function usePdfDocument() {
+  const source = useMemo(
+    () => resolvePdfSource(window.location.href, window.location.origin),
+    [],
+  );
+  const [state, setState] = useState<{
+    url: string | null;
+    error: string | null;
+    loading: boolean;
+    // No target in the URL means show the landing page, NOT a default paper.
+  }>({ url: null, error: null, loading: Boolean(source.url) });
+
+  useEffect(() => {
+    if (!source.url) return;
+    const ctrl = new AbortController();
+    let objectUrl: string | null = null;
+    fetchPdf(source.url, ctrl.signal)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setState({ url: objectUrl, error: null, loading: false });
+      })
+      .catch((e) => {
+        if (ctrl.signal.aborted) return;
+        setState({ url: null, error: String(e?.message ?? e), loading: false });
+      });
+    return () => {
+      ctrl.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [source.url]);
+
+  return { ...state, label: source.label, target: source.url };
+}
+
 export default function App() {
   const { engine, isLoading } = usePdfiumEngine();
+  const doc = usePdfDocument();
+  // A document opened from the landing page (dropped file or the demo).
+  const [picked, setPicked] = useState<{ url: string; label: string } | null>(null);
+  const activeUrl = doc.url ?? picked?.url ?? null;
+  const activeLabel = doc.url ? doc.label : (picked?.label ?? '');
+  const plugins = useMemo(() => (activeUrl ? buildPlugins(activeUrl) : null), [activeUrl]);
   const isMobile = useIsMobile();
   // Desktop starts with both panes open; mobile starts on the PDF alone.
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
@@ -687,11 +738,32 @@ export default function App() {
     if (v && isMobile) setSidebarOpen(false);
   };
 
-  if (isLoading || !engine) {
+  if (doc.error) {
+    return (
+      <div className="dd-boot dd-boot-error">
+        <h1>Could not open that PDF</h1>
+        <p>{doc.error}</p>
+        <p className="dd-boot-hint">
+          Put a PDF link straight after the address, e.g.
+          <code>{window.location.origin}/https://arxiv.org/pdf/1907.04392</code>
+        </p>
+        <a className="dd-primary" href={window.location.origin + '/'}>
+          Back to start
+        </a>
+      </div>
+    );
+  }
+
+  // Nothing requested in the URL and nothing chosen yet → landing page.
+  if (!doc.loading && !activeUrl) {
+    return <Landing onOpen={(url, label) => setPicked({ url, label })} />;
+  }
+
+  if (isLoading || !engine || doc.loading || !plugins) {
     return (
       <div className="dd-boot">
         <div className="dd-spinner" />
-        <span>loading PDFium engine…</span>
+        <span>{doc.loading ? `fetching ${doc.label}…` : 'loading PDFium engine…'}</span>
       </div>
     );
   }
@@ -711,7 +783,7 @@ export default function App() {
                   <header className="dd-top dd-no-interaction">
                     {/* logo is desktop-only — the phone needs the width for tools */}
                     <h1 className="dd-logo">
-                      drawde <span>viewer</span>
+                      drawde <span>{activeLabel}</span>
                     </h1>
                     <ModeController
                       documentId={activeDocumentId}
