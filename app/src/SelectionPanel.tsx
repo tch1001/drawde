@@ -77,13 +77,14 @@ export function SelectionPanel({
             <p>Nothing selected yet.</p>
             <ul>
               <li>
-                <kbd>R</kbd> region mode → drag a box around an equation
+                <b>▭ Region</b> <kbd>R</kbd> → drag a box around an equation
               </li>
               <li>
-                <kbd>T</kbd> text mode → drag to select text
+                <b>T Text</b> <kbd>T</kbd> → drag to select text
               </li>
               <li>
-                hold <kbd>Shift</kbd> while selecting to <b>add</b> instead of replace
+                <b>🔒 Lock</b> <kbd>L</kbd> → new selections <b>add</b> instead of
+                replacing. Holding <kbd>Shift</kbd> does the same while held.
               </li>
             </ul>
             <p className="dd-empty-note">

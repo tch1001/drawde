@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPluginRegistration } from '@embedpdf/core';
 import { EmbedPDF } from '@embedpdf/core/react';
+import { useDocumentState } from '@embedpdf/core/react';
 import { usePdfiumEngine } from '@embedpdf/engines/react';
 import { Viewport, ViewportPluginPackage } from '@embedpdf/plugin-viewport/react';
 import { Scroller, ScrollPluginPackage } from '@embedpdf/plugin-scroll/react';
@@ -460,6 +461,48 @@ function Splitter({
   );
 }
 
+/**
+ * Scale for the base RenderLayer, quantized to a coarse ladder.
+ *
+ * Why not just use the live zoom: RenderLayer re-renders on every scale change,
+ * so tracking zoom exactly would thrash the renderer during a pinch.
+ * Why not pin it at 1: then at 300% the base is a 3x upscale, and since the
+ * tiling layer briefly has no tiles mid-zoom you see a soft-to-sharp pulse.
+ *
+ * Quantizing gets both: the base is never worse than a ~1.4x upscale, and it
+ * only re-renders when you cross a rung. RenderLayer keeps the previous image
+ * on screen while the new one decodes, so crossing a rung never blanks.
+ * Capped at 2 deliberately — a scale-4 base on a letter page is ~31 MB of
+ * bitmap per page, which is a bad trade on phones when tiles cover detail.
+ */
+const BASE_SCALE_LADDER = [1, 1.5, 2];
+function useBaseScale(documentId: string) {
+  const documentState = useDocumentState(documentId);
+  const scale = documentState?.scale ?? 1;
+  return (
+    BASE_SCALE_LADDER.find((rung) => rung >= scale) ??
+    BASE_SCALE_LADDER[BASE_SCALE_LADDER.length - 1]
+  );
+}
+
+/**
+ * The always-present bitmap under the tiling layer. Kept in its own component
+ * so it can subscribe to the quantized scale — `renderPage` is a plain callback
+ * and can't hold hooks of its own.
+ */
+function BaseRender({ documentId, pageIndex }: { documentId: string; pageIndex: number }) {
+  const baseScale = useBaseScale(documentId);
+  return (
+    <RenderLayer
+      documentId={documentId}
+      pageIndex={pageIndex}
+      scale={baseScale}
+      draggable={false}
+      style={{ WebkitUserDrag: 'none', userSelect: 'none' } as any}
+    />
+  );
+}
+
 /** Supplies page count / current page from scroll state to the nav + sidebar. */
 function NavHost({ documentId }: { documentId: string }) {
   const { state } = useScroll(documentId);
@@ -615,15 +658,9 @@ export default function App() {
                               onDragStart={(e) => e.preventDefault()}
                               style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                             >
-                              {/* base render pinned at scale 1: it does NOT re-render on
-                                  zoom, so there is no blank flash — the tiling layer
-                                  paints crisp tiles over it at the live scale. */}
-                              <RenderLayer
+                              <BaseRender
                                 documentId={activeDocumentId}
                                 pageIndex={pageIndex}
-                                scale={1}
-                                draggable={false}
-                                style={{ WebkitUserDrag: 'none', userSelect: 'none' } as any}
                               />
                               <TilingLayer
                                 documentId={activeDocumentId}
