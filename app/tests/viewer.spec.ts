@@ -22,8 +22,13 @@ type Pt = { dx: number; dy: number };
 const BOX_A: [Pt, Pt] = [{ dx: 100, dy: 180 }, { dx: 400, dy: 240 }];
 /** A second, clearly different box target. */
 const BOX_B: [Pt, Pt] = [{ dx: 130, dy: 300 }, { dx: 380, dy: 350 }];
-/** Across the first lines of the Abstract — dense body text. */
-const TEXT_A: [Pt, Pt] = [{ dx: 78, dy: 396 }, { dx: 500, dy: 420 }];
+/**
+ * Along the 2nd line of the Abstract ("…include in their Hilbert space…").
+ * MUST start ON a glyph: EmbedPDF's selection plugin only begins a *text*
+ * selection when pointerdown hits a glyph; starting in whitespace silently
+ * falls through to its marquee handler instead (see tests/README.md).
+ */
+const TEXT_A: [Pt, Pt] = [{ dx: 150, dy: 415 }, { dx: 430, dy: 417 }];
 
 /* ────────────────────────────── helpers ────────────────────────────── */
 
@@ -226,18 +231,23 @@ test.describe('drawde viewer', () => {
     await expect(rects(page)).toHaveCount(2);
     await expect(cards(page)).toHaveCount(2);
 
-    // remember which one we are killing
-    const doomed = await page
-      .locator('.dd-card .dd-card-meta')
-      .first()
-      .textContent();
+    // panel meta is positional ("#1 · p.1"), so identify survivors by geometry
+    const before = await rects(page).evaluateAll((els) =>
+      els.map((el) => (el as HTMLElement).style.cssText),
+    );
+    expect(before).toHaveLength(2);
 
+    // real click on the ✕ of the FIRST rect
     await page.locator('.dd-rect-x').first().click();
 
     await expect(rects(page)).toHaveCount(1);
     await expect(cards(page)).toHaveCount(1);
-    const left = await page.locator('.dd-card .dd-card-meta').first().textContent();
-    expect(left).not.toBe(doomed);
+    await expect(page.locator('.dd-count')).toHaveText('1');
+
+    const after = await rects(page).evaluateAll((els) =>
+      els.map((el) => (el as HTMLElement).style.cssText),
+    );
+    expect(after, 'the wrong rectangle was removed').toEqual([before[1]]);
   });
 
   test('8 · text drag produces a text card with non-empty text', async ({ page }) => {

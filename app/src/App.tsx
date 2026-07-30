@@ -22,10 +22,13 @@ import {
 import { ZoomPluginPackage, useZoom, useZoomCapability } from '@embedpdf/plugin-zoom/react';
 import { BookmarkPluginPackage } from '@embedpdf/plugin-bookmark/react';
 import { useScrollCapability, useScroll } from '@embedpdf/plugin-scroll/react';
+import { TilingLayer, TilingPluginPackage } from '@embedpdf/plugin-tiling/react';
+import { SearchLayer, SearchPluginPackage } from '@embedpdf/plugin-search/react';
 
 import { BoxSelectLayer } from './BoxSelectLayer';
 import { SelectionPanel } from './SelectionPanel';
 import { Sidebar } from './Sidebar';
+import { SearchBar } from './SearchBar';
 import { BOX_MODE, TEXT_MODE } from './modes';
 import { nextRegionId, regionStore } from './store';
 import type { Region } from './types';
@@ -45,6 +48,10 @@ const plugins = [
   // wiping zoomRanges/minZoom/maxZoom, and scroll layout then never emits (blank viewer).
   createPluginRegistration(ZoomPluginPackage),
   createPluginRegistration(BookmarkPluginPackage),
+  // tiling keeps the previous render on screen while high-res tiles refine on top,
+  // which is what removes the flash when zooming
+  createPluginRegistration(TilingPluginPackage, { tileSize: 768, overlapPx: 2, extraRings: 1 }),
+  createPluginRegistration(SearchPluginPackage),
 ];
 
 /**
@@ -204,7 +211,8 @@ function ZoomControls({ documentId }: { documentId: string }) {
     const r = el.getBoundingClientRect();
     return { vx: r.width / 2, vy: r.height / 2 };
   };
-  const by = (d: number) => zoom?.forDocument(documentId).requestZoomBy(d, viewportCenter());
+  // useZoom(documentId).provides is ALREADY document-scoped — no .forDocument() on it.
+  const by = (d: number) => zoom?.requestZoomBy(d, viewportCenter());
 
   return (
     <span className="dd-zoom">
@@ -215,12 +223,49 @@ function ZoomControls({ documentId }: { documentId: string }) {
   );
 }
 
+/** Editable page number — type a page and press Enter to jump there. */
 function PageIndicator({ documentId }: { documentId: string }) {
-  const { state } = useScroll(documentId);
+  const { state, provides: scroll } = useScroll(documentId);
+  const [draft, setDraft] = useState<string | null>(null);
+
   if (!state?.totalPages) return null;
+  const total = state.totalPages;
+
+  const commit = () => {
+    const n = parseInt(draft ?? '', 10);
+    setDraft(null);
+    if (!Number.isFinite(n)) return;
+    scroll?.scrollToPage({
+      pageNumber: Math.max(1, Math.min(total, n)),
+      behavior: 'auto',
+    });
+  };
+
   return (
     <span className="dd-pageind">
-      p. {state.currentPage} / {state.totalPages}
+      p.
+      <input
+        className="dd-pageinput"
+        value={draft ?? String(state.currentPage)}
+        onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+        onFocus={(e) => {
+          setDraft(String(state.currentPage));
+          requestAnimationFrame(() => e.target.select());
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === 'Escape') {
+            setDraft(null);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        title="Type a page number and press Enter"
+      />
+      / {total}
     </span>
   );
 }
@@ -454,11 +499,24 @@ export default function App() {
                               onDragStart={(e) => e.preventDefault()}
                               style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                             >
+                              {/* base render pinned at scale 1: it does NOT re-render on
+                                  zoom, so there is no blank flash — the tiling layer
+                                  paints crisp tiles over it at the live scale. */}
                               <RenderLayer
                                 documentId={activeDocumentId}
                                 pageIndex={pageIndex}
+                                scale={1}
                                 draggable={false}
                                 style={{ WebkitUserDrag: 'none', userSelect: 'none' } as any}
+                              />
+                              <TilingLayer
+                                documentId={activeDocumentId}
+                                pageIndex={pageIndex}
+                                style={{ WebkitUserDrag: 'none', userSelect: 'none' } as any}
+                              />
+                              <SearchLayer
+                                documentId={activeDocumentId}
+                                pageIndex={pageIndex}
                               />
                               <SelectionLayer
                                 documentId={activeDocumentId}
@@ -475,6 +533,7 @@ export default function App() {
                       <TextSelectionBridge documentId={activeDocumentId} />
                       <NavHost documentId={activeDocumentId} />
                       <CtrlWheelZoom documentId={activeDocumentId} />
+                      <SearchBar documentId={activeDocumentId} />
                     </div>
 
                     <Splitter

@@ -69,7 +69,44 @@ kbd {
 }
 .dd-burger:hover { color: var(--text); }
 .dd-burger.on { background: var(--panel2); color: var(--text); border-color: var(--muted); }
-.dd-pageind { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dd-pageind {
+  font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: .25rem;
+}
+.dd-pageinput {
+  width: 3.2em; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: .12rem .3rem; font: inherit; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.dd-pageinput:focus { outline: none; border-color: var(--accent); }
+
+/* ── ctrl/cmd+F search bar ──────────────────────────────── */
+.dd-search {
+  position: absolute; top: 10px; right: 18px; z-index: 40;
+  display: flex; align-items: center; gap: .35rem;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 9px; padding: .4rem .5rem;
+  box-shadow: 0 6px 22px rgba(0,0,0,.45);
+}
+.dd-search input {
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: .25rem .5rem; font-size: .82rem; width: 190px;
+}
+.dd-search input:focus { outline: none; border-color: var(--accent); }
+.dd-search-count {
+  font-size: .72rem; color: var(--muted); min-width: 5.5em; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.dd-search button {
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 5px;
+  width: 22px; height: 22px; cursor: pointer; font-size: .8rem;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.dd-search button:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+.dd-search button:disabled { opacity: .35; cursor: not-allowed; }
 
 .dd-main { flex: 1; display: flex; min-height: 0; }
 
