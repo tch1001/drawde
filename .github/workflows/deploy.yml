@@ -79,6 +79,36 @@ jobs:
           name: dist
           path: app/dist
 
+      # `pages deploy` fails with "Project not found" against an account that
+      # has never had this project, so create it on demand instead of making a
+      # fresh clone depend on someone having run wrangler by hand. Creating a
+      # project that exists returns an error we deliberately swallow — the only
+      # outcome that matters is that it exists before the deploy runs.
+      - name: Ensure Pages project exists
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects"
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$api/drawde" \
+            -H "Authorization: Bearer $CF_API_TOKEN")
+          if [ "$code" = "200" ]; then
+            echo "Pages project 'drawde' already exists."
+            exit 0
+          fi
+          echo "Pages project 'drawde' not found (HTTP $code) — creating it."
+          body=$(curl -s "$api" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"drawde","production_branch":"main"}')
+          # Trust the follow-up GET, not the POST body: a concurrent run may
+          # have won the race, which reports as a failure but is a fine outcome.
+          echo "$body" | head -c 400
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$api/drawde" \
+            -H "Authorization: Bearer $CF_API_TOKEN")
+          [ "$code" = "200" ] || { echo "::error::Could not create Pages project (HTTP $code)"; exit 1; }
+
       # Asset dir comes from wrangler.toml (pages_build_output_dir), which also
       # anchors ./functions so /api/pdf ships with the deploy. Branch matters:
       # Pages treats the production branch as production and anything else as a
