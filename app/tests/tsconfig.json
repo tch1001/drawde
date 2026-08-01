@@ -4,6 +4,11 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // The specs read process.env for the dev-server port. Named explicitly
+    // rather than left to ambient @types discovery: @types/node only reaches
+    // node_modules transitively, so a lockfile refresh could drop it and this
+    // would fail in CI while still passing on a stale local install.
+    "types": ["node"],
     "skipLibCheck": true,
     "allowJs": false,
     "resolveJsonModule": true,
