@@ -1,0 +1,9 @@
+# Cloudflare Pages project config.
+#
+# `pages_build_output_dir` anchors the deploy: static assets come from
+# app/dist, and Pages Functions from ./functions (relative to this file) —
+# which is where /api/pdf lives. Wrangler has no --functions-directory flag,
+# so this config is what makes the Function ship alongside the assets.
+name = "drawde"
+compatibility_date = "2026-01-01"
+pages_build_output_dir = "app/dist"

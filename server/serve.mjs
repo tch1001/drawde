@@ -115,7 +115,10 @@ async function proxyPdf(req, res, target) {
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-  if (u.pathname === '/_proxy') {
+  // `/api/pdf` matches the Cloudflare Pages Function (functions/api/pdf.js) so
+  // self-hosted and Pages deployments behave identically. `/_proxy` is kept as
+  // an alias for anything still pointing at the old path.
+  if (u.pathname === '/api/pdf' || u.pathname === '/_proxy') {
     const target = u.searchParams.get('url');
     if (!target) return void res.writeHead(400).end('Missing url parameter');
     return void proxyPdf(req, res, target);

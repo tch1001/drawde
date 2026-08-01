@@ -1,0 +1,6 @@
+# SPA fallback.
+#
+# Every path is a PDF target — drawde.tchlabs.net/https://arxiv.org/pdf/1907.04392
+# must serve the app, not 404. Cloudflare Pages serves real static files and
+# Functions (/api/*) first, so this only catches what's left.
+/*  /index.html  200

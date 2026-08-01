@@ -84,7 +84,10 @@ export async function fetchPdf(url: string, signal?: AbortSignal): Promise<Blob>
     throw new Error(`${res.status} ${res.statusText}`);
   } catch (direct: any) {
     if (signal?.aborted) throw direct;
-    const res = await fetch(`/_proxy?url=${encodeURIComponent(url)}`, { signal }).catch(
+    // Same path on both deployments: a Pages Function in production
+    // (functions/api/pdf.js), the equivalent handler in server/serve.mjs when
+    // self-hosting. Not `/_proxy`: Pages reserves leading-underscore names.
+    const res = await fetch(`/api/pdf?url=${encodeURIComponent(url)}`, { signal }).catch(
       () => null,
     );
     if (!res) {
