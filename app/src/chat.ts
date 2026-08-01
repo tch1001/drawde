@@ -10,6 +10,12 @@ export interface ChatMessage {
   text: string;
   streaming?: boolean;
   error?: string;
+  /**
+   * What was selected when this question was asked, frozen at send time.
+   * The live context is emptied on send, so this is the only record of what
+   * the question was actually about — and it owns its crops' object URLs.
+   */
+  contexts?: Region[];
 }
 
 export interface ChatState {
@@ -66,6 +72,11 @@ class ChatStore {
 
   clear() {
     this.abort?.abort();
+    // The messages own their snapshots' crops (regionStore.detach handed them
+    // over without revoking), so dropping the thread has to free them.
+    this.state.messages.forEach((m) =>
+      m.contexts?.forEach((r) => r.imageUrl && URL.revokeObjectURL(r.imageUrl)),
+    );
     this.set({ messages: [], busy: false, status: null });
   }
 
@@ -137,10 +148,17 @@ class ChatStore {
     const regions = regionStore.getSnapshot();
 
     this.set({ busy: true });
-    this.push({ id: `m${++this.seq}`, role: 'user', text: question });
+    // Show the question with its selections straight away. These objects may
+    // still be mid-OCR; the snapshot is replaced with the finished ones below.
+    const userId = `m${++this.seq}`;
+    this.push({ id: userId, role: 'user', text: question, contexts: regions });
 
     try {
+      // OCR first, then detach: recognition writes results through the region
+      // store, so emptying it any earlier would throw those results away.
       await this.runOcr(regions);
+      const contexts = regionStore.detach();
+      this.patchMessage(userId, { contexts });
 
       const assistantId = `m${++this.seq}`;
       this.push({ id: assistantId, role: 'assistant', text: '', streaming: true });
@@ -152,8 +170,15 @@ class ChatStore {
         .map((m) => ({ role: m.role, text: m.text }));
 
       this.abort = new AbortController();
-      // re-read regions: OCR above mutated them
-      const withLatex = regionStore.getSnapshot();
+      // Every selection the conversation has been given, not just this turn's:
+      // the live context is empty from here on, and a follow-up like "what
+      // about the second term?" still refers to an earlier equation. This is
+      // also what the model saw before — the selection used to persist across
+      // turns and be re-sent each time — so the cost profile is unchanged.
+      const seen = new Set<string>();
+      const withLatex = this.state.messages
+        .flatMap((m) => m.contexts ?? [])
+        .filter((r) => !seen.has(r.id) && seen.add(r.id));
 
       await llm.stream(
         withLatex,

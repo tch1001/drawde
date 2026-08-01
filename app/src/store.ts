@@ -53,6 +53,20 @@ class RegionStore {
     this.regions = [];
     this.emit();
   }
+
+  /**
+   * Hand the current selection to a caller and empty the live context.
+   *
+   * Unlike clear() this does NOT revoke the object URLs: ownership moves to
+   * the caller, which goes on rendering the crops. Revoking here would blank
+   * every image in the message the selection was just attached to.
+   */
+  detach(): Region[] {
+    const taken = this.regions;
+    this.regions = [];
+    this.emit();
+    return taken;
+  }
 }
 
 export const regionStore = new RegionStore();

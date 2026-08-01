@@ -528,11 +528,11 @@ kbd {
 .dd-modelpick-empty { text-align: left; color: var(--accent); }
 
 /* ── rendered model output ──────────────────────────────── */
-.dd-md { font-size: .84rem; line-height: 1.55; }
+.dd-md { font-size: calc(.84rem * var(--dd-chat-scale)); line-height: 1.55; }
 .dd-md > :first-child { margin-top: 0; }
 .dd-md > :last-child { margin-bottom: 0; }
 .dd-md p { margin: 0 0 .6rem; }
-.dd-md h1, .dd-md h2, .dd-md h3 { font-size: .92rem; margin: .9rem 0 .4rem; }
+.dd-md h1, .dd-md h2, .dd-md h3 { font-size: 1.1em; margin: .9rem 0 .4rem; }
 .dd-md ul, .dd-md ol { padding-left: 1.2rem; margin: 0 0 .6rem; }
 .dd-md li { margin-bottom: .25rem; }
 .dd-md code {
@@ -548,7 +548,7 @@ kbd {
   margin: 0 0 .6rem; padding-left: .7rem;
   border-left: 2px solid var(--border); color: var(--muted);
 }
-.dd-md table { border-collapse: collapse; font-size: .78rem; margin-bottom: .6rem; }
+.dd-md table { border-collapse: collapse; font-size: .93em; margin-bottom: .6rem; }
 .dd-md th, .dd-md td { border: 1px solid var(--border); padding: .25rem .45rem; }
 /* Maths in model output follows the same rule as the OCR card: black on white.
    Display math gets its own box; inline maths gets a subtle pill so a formula
@@ -780,3 +780,19 @@ kbd {
 }
 .dd-home:hover { color: var(--accent); }
 .dd-home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ── a question's frozen context ────────────────────────────
+   The selections a message was sent with, shown above it. Muted and inset so
+   the thread still reads as a conversation rather than a stack of cards, and
+   visibly inert — these are a record of what was asked, not a live selection. */
+.dd-msg-context {
+  margin-bottom: .45rem; padding-left: .55rem;
+  border-left: 2px solid var(--border);
+}
+.dd-msg-context-label {
+  font-size: calc(.7rem * var(--dd-chat-scale)); color: var(--muted);
+  margin-bottom: .35rem; letter-spacing: .01em;
+}
+.dd-msg-context .dd-card { margin-bottom: .4rem; opacity: .9; }
+.dd-msg-context .dd-crop { max-height: calc(120px * var(--dd-chat-scale)); object-fit: contain; object-position: left; }
+.dd-card.is-sent { background: transparent; border-style: dashed; }

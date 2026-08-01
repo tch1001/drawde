@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.log
 app/dist/
+
+# wrangler CLI state — caches the Cloudflare account id (kept as a CI secret)
+.wrangler/

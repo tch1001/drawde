@@ -81,10 +81,23 @@ function Composer({
   );
 }
 
-function RegionCard({ region, index }: { region: Region; index: number }) {
+/**
+ * `readOnly` renders a selection that has already been sent: it is a record of
+ * what a question was asked about, so removing it or re-editing its LaTeX would
+ * misrepresent the exchange rather than fix anything.
+ */
+function RegionCard({
+  region,
+  index,
+  readOnly,
+}: {
+  region: Region;
+  index: number;
+  readOnly?: boolean;
+}) {
   const [editing, setEditing] = useState(false);
   return (
-    <div className="dd-card">
+    <div className={`dd-card ${readOnly ? 'is-sent' : ''}`}>
       <div className="dd-card-head">
         <span className={`dd-kind dd-kind-${region.kind}`}>
           {region.kind === 'box' ? '▭ region' : 'T text'}
@@ -92,9 +105,15 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
         <span className="dd-card-meta">
           #{index + 1} · p.{region.pageIndex + 1}
         </span>
-        <button className="dd-card-x" title="Remove" onClick={() => regionStore.remove(region.id)}>
-          ×
-        </button>
+        {!readOnly && (
+          <button
+            className="dd-card-x"
+            title="Remove"
+            onClick={() => regionStore.remove(region.id)}
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {region.kind === 'box' ? (
@@ -115,13 +134,15 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
       {region.kind === 'box' && region.latex && (
         <div className="dd-latex">
           <LatexPreview tex={region.latex} />
-          <button
-            className="dd-latex-edit"
-            onClick={() => setEditing(true)}
-            title="OCR wrong? Edit the LaTeX"
-          >
-            edit
-          </button>
+          {!readOnly && (
+            <button
+              className="dd-latex-edit"
+              onClick={() => setEditing(true)}
+              title="OCR wrong? Edit the LaTeX"
+            >
+              edit
+            </button>
+          )}
         </div>
       )}
       {editing && (
@@ -270,6 +291,20 @@ export function SelectionPanel({
               <div className="dd-thread">
                 {chat.messages.map((m) => (
                   <div key={m.id} className={`dd-msg dd-msg-${m.role}`}>
+                    {/* What this question was asked about, frozen at send time
+                        — the live context was emptied so the next question can
+                        start from a clean selection. */}
+                    {!!m.contexts?.length && (
+                      <div className="dd-msg-context">
+                        <div className="dd-msg-context-label">
+                          asked with {m.contexts.length} selection
+                          {m.contexts.length > 1 ? 's' : ''}
+                        </div>
+                        {m.contexts.map((r, i) => (
+                          <RegionCard key={r.id} region={r} index={i} readOnly />
+                        ))}
+                      </div>
+                    )}
                     {m.text &&
                       (m.role === 'assistant' ? (
                         // model output: markdown + LaTeX, sanitised

@@ -222,6 +222,20 @@ const { defaultBrowserType: _ignored, ...PIXEL_5 } = devices['Pixel 5'];
    DESKTOP
    ══════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Keep the Texo weights out of the suite.
+ *
+ * OCR now starts the moment a region is drawn, so without this every
+ * box-drawing test would pull a large model from huggingface.co and then burn
+ * CPU decoding an equation no assertion looks at. That contention also made the
+ * timing-sensitive text-selection tests flakier. Blocking it makes the run fast
+ * and deterministic; test 21 asserts only that recognition was *entered*, which
+ * holds whether the model loads or fails.
+ */
+test.beforeEach(async ({ page }) => {
+  await page.route(/huggingface\.co|hf\.co/, (route) => route.abort());
+});
+
 test.describe('desktop · boot & modes', () => {
   test('1 · boots: PDFium engine loads, first page renders, no console errors', async ({
     page,
@@ -791,5 +805,89 @@ test.describe('desktop · context pane', () => {
     // the paper came from the URL, so this is a real navigation back to root
     await expect(page.locator('.dd-landing')).toBeVisible({ timeout: 90_000 });
     expect(new URL(page.url()).pathname).toBe('/');
+  });
+});
+
+test.describe('desktop · context snapshot on send', () => {
+  /**
+   * Sending is normally gated on an API key. The point here is the snapshot +
+   * clear, which happens before any network call, so the request is stubbed to
+   * fail fast — the user turn and its frozen context are rendered either way.
+   */
+  async function sendWithStubbedLlm(page: Page, text: string) {
+    await page.route('**://api.anthropic.com/**', (r) => r.abort());
+    await page.evaluate(() => {
+      localStorage.setItem('drawde.key.anthropic', 'sk-ant-test');
+      localStorage.setItem('drawde.model', 'claude-opus-5');
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.dd-app', { timeout: 90_000 });
+    await page.waitForSelector('.dd-layer');
+    await dragOnPage(page, BOX_A);
+    await expect(page.locator('.dd-panel-body .dd-card')).toHaveCount(1);
+    await page.locator('.dd-composer-input').fill(text);
+    await page.locator('.dd-send').click();
+  }
+
+  test('25 · the sent selection is frozen above the message and the live context is emptied', async ({
+    page,
+  }) => {
+    await boot(page);
+    await sendWithStubbedLlm(page, 'what is this?');
+
+    // the question carries its context with it …
+    const snapshot = page.locator('.dd-msg-user .dd-msg-context .dd-card');
+    await expect(snapshot).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator('.dd-msg-context-label')).toHaveText(/asked with 1 selection/);
+
+    // … the crop survives being detached from the store (its object URL must
+    // NOT have been revoked) …
+    const crop = page.locator('.dd-msg-context .dd-crop');
+    await expect(crop).toBeVisible();
+    expect(
+      await crop.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+      'the snapshot crop still has pixels after detach',
+    ).toBe(true);
+
+    // … it is inert: no remove affordance on a sent selection …
+    await expect(page.locator('.dd-msg-context .dd-card-x')).toHaveCount(0);
+
+    // … and the live context is now empty, ready for a fresh selection.
+    await expect(page.locator('.dd-context-strip .dd-card')).toHaveCount(0);
+    await expect(page.locator('.dd-composer-input')).toHaveAttribute(
+      'placeholder',
+      /follow-up/i,
+    );
+
+    // a new selection lands in the empty live context, not on the old message
+    await dragOnPage(page, BOX_B);
+    await expect(page.locator('.dd-context-strip .dd-card')).toHaveCount(1);
+    await expect(snapshot).toHaveCount(1);
+  });
+
+  test('26 · the text-size control scales model output too', async ({ page }) => {
+    await boot(page);
+    await dragOnPage(page, BOX_A);
+
+    // .dd-md is what renders assistant markdown; it used to pin its own rem
+    // size and ignore the scale entirely.
+    const scaled = await page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.className = 'dd-md';
+      document.querySelector('.dd-panel')!.appendChild(probe);
+      const at = () => parseFloat(getComputedStyle(probe).fontSize);
+      const before = at();
+      (document.querySelector('.dd-panel') as HTMLElement).style.setProperty(
+        '--dd-chat-scale',
+        '1.5',
+      );
+      const after = at();
+      probe.remove();
+      return { before, after };
+    });
+    expect(scaled.after, 'model output grows with the chat scale').toBeGreaterThan(
+      scaled.before,
+    );
+    expect(scaled.after / scaled.before).toBeCloseTo(1.5, 1);
   });
 });
