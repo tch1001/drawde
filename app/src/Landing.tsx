@@ -2,6 +2,18 @@ import { useCallback, useRef, useState } from 'react';
 import { SAMPLE_PDF } from './pdf-source';
 
 /**
+ * Live examples rather than prose: each is a real link, so the URL trick can be
+ * tried rather than just read about. They also double as the documentation of
+ * which shapes are accepted.
+ */
+const EXAMPLES = [
+  { path: 'https://arxiv.org/pdf/1907.04392', note: 'a full PDF link' },
+  { path: 'arxiv.org/pdf/1907.04392', note: 'https:// is optional' },
+  { path: 'https://arxiv.org/abs/2510.01051', note: 'abstract pages resolve to the PDF' },
+  { path: '2510.01051', note: 'or just an arXiv id' },
+];
+
+/**
  * Shown when no PDF was named in the address bar. Three ways in: drop a file,
  * pick one, or open the demo paper — plus the prefix trick, which is otherwise
  * undiscoverable.
@@ -12,6 +24,7 @@ export function Landing({ onOpen }: { onOpen: (url: string, label: string) => vo
   const [urlDraft, setUrlDraft] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const origin = window.location.origin;
+  const host = origin.replace(/^https?:\/\//, '');
 
   const openFile = useCallback(
     (file: File) => {
@@ -93,15 +106,19 @@ export function Landing({ onOpen }: { onOpen: (url: string, label: string) => vo
         <div className="dd-landing-trick">
           <p>
             <b>Any paper, from the address bar.</b> Put the PDF link straight
-            after <code>{origin.replace(/^https?:\/\//, '')}/</code> —
+            after <code>{host}/</code> — each of these is a live link, try one:
           </p>
-          <code className="dd-landing-example">
-            {origin.replace(/^https?:\/\//, '')}/https://arxiv.org/pdf/1907.04392
-          </code>
-          <p className="dd-landing-variants">
-            The <code>https://</code> is optional, arXiv <code>/abs/</code> links
-            work too, and a bare arXiv id like <code>2510.01051</code> is enough.
-          </p>
+          <ul className="dd-landing-examples">
+            {EXAMPLES.map((e) => (
+              <li key={e.path}>
+                <a href={`${origin}/${e.path}`}>
+                  <span className="dd-ex-host">{host}/</span>
+                  <span className="dd-ex-path">{e.path}</span>
+                </a>
+                <em>{e.note}</em>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <button className="dd-linkbtn" onClick={() => onOpen(SAMPLE_PDF, 'sample paper')}>

@@ -61,6 +61,13 @@ const CONSOLE_NOISE = [/\[vite\]/i, /Download the React DevTools/i, /favicon/i];
  * Navigate, wait for the PDFium engine + document + first page bitmap, and
  * return the list of console errors collected from the very first navigation.
  */
+/**
+ * The bundled sample, addressed through the URL-prefix route.
+ * Must match the port in playwright.config.mjs.
+ */
+const TEST_PORT = Number(process.env.DRAWDE_TEST_PORT || 5181);
+const SAMPLE_URL = `http://127.0.0.1:${TEST_PORT}/sample.pdf`;
+
 async function boot(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('console', (msg) => {
@@ -71,7 +78,11 @@ async function boot(page: Page): Promise<string[]> {
   });
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
 
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  // `/` is now the landing page — no paper opens by default — so address the
+  // sample through the URL-prefix route instead. That exercises the real
+  // prefix-parsing path, is deterministic (no click to race against), and
+  // stays local so the suite never depends on arXiv being up.
+  await page.goto(`/${SAMPLE_URL}`, { waitUntil: 'domcontentloaded' });
 
   // `.dd-app` only mounts once the WASM engine AND the document have loaded —
   // before that it is the `.dd-boot` spinner.

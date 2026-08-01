@@ -480,6 +480,39 @@ kbd {
 }
 .dd-tex-input:focus { outline: none; border-color: var(--accent); }
 
+/* ── context strip: selections beside the composer ──────── */
+.dd-context-strip {
+  max-height: 38vh; overflow-y: auto;
+  margin: -.15rem 0 .55rem;
+  padding-top: .1rem;
+  border-top: 1px solid var(--border);
+}
+.dd-context-strip::before {
+  content: 'Context'; display: block;
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: .5rem 0 .4rem;
+}
+.dd-context-strip .dd-card { margin-bottom: .45rem; }
+.dd-context-strip .dd-card:last-child { margin-bottom: 0; }
+/* crops get shorter here — this strip is a reminder, not the main view */
+.dd-context-strip .dd-crop { max-height: 90px; object-fit: contain; object-position: left; }
+
+/* ── landing examples ───────────────────────────────────── */
+.dd-landing-examples { list-style: none; margin: .7rem 0 0; padding: 0; }
+.dd-landing-examples li { margin-bottom: .55rem; }
+.dd-landing-examples a {
+  display: block; padding: .45rem .55rem; border-radius: 6px;
+  background: var(--bg); font-size: .78rem; word-break: break-all;
+  text-decoration: none; border: 1px solid transparent;
+}
+.dd-landing-examples a:hover { border-color: var(--accent); text-decoration: none; }
+.dd-ex-host { color: var(--muted); }
+.dd-ex-path { color: var(--accent); }
+.dd-landing-examples em {
+  display: block; font-style: normal; font-size: .74rem;
+  color: var(--muted); margin-top: .2rem;
+}
+
 /* ── model picker ───────────────────────────────────────── */
 .dd-modelbar { margin-bottom: .45rem; }
 .dd-modelpick {

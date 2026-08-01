@@ -227,9 +227,11 @@ export function SelectionPanel({
           </div>
         ) : (
           <>
-            {regions.map((r, i) => (
-              <RegionCard key={r.id} region={r} index={i} />
-            ))}
+            {/* Selections live down by the composer once a conversation exists
+                — see the context strip in the footer. Before that they are the
+                only content, so they sit here. */}
+            {chat.messages.length === 0 &&
+              regions.map((r, i) => <RegionCard key={r.id} region={r} index={i} />)}
             {chat.messages.length > 0 && (
               <div className="dd-thread">
                 {chat.messages.map((m) => (
@@ -264,6 +266,18 @@ export function SelectionPanel({
                   <span style={{ width: `${Math.round(chat.modelProgress * 100)}%` }} />
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Once a conversation is going, the selections move down here beside
+              the composer: after a long answer they'd otherwise be scrolled far
+              off the top, exactly when you want to check what you're asking
+              about. Capped and scrollable so they can't crowd out the thread. */}
+          {chat.messages.length > 0 && regions.length > 0 && (
+            <div className="dd-context-strip">
+              {regions.map((r, i) => (
+                <RegionCard key={r.id} region={r} index={i} />
+              ))}
             </div>
           )}
 
