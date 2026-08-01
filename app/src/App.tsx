@@ -36,6 +36,7 @@ import { selectionMode, useSelectionMode } from './selection-mode';
 import { PAN_MODE } from './modes';
 import { BOX_MODE, TEXT_MODE } from './modes';
 import { nextRegionId, regionStore, useRegions } from './store';
+import { chatStore } from './chat';
 import type { Region } from './types';
 import { resolvePdfSource, fetchPdf } from './pdf-source';
 import { Landing } from './Landing';
@@ -632,6 +633,13 @@ function SidebarHost({
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+/**
+ * How wide the context panel may be dragged. Read at drag time, not captured,
+ * so the ceiling tracks a resized window. Answers get long and equations get
+ * wide — a fixed cap made the pane the constraint rather than the content.
+ */
+const maxPanelW = () => Math.round(window.innerWidth * 0.7);
+
 const MOBILE_QUERY = '(max-width: 820px)';
 
 /** True on narrow viewports. Drives single-pane layout + overlay panels. */
@@ -728,6 +736,33 @@ export default function App() {
     setPanelOpen(!isMobile);
   }, [isMobile]);
 
+  // The 70% ceiling is relative to the window, so shrinking it can strand the
+  // panel above the limit. Pull it back rather than let it crowd out the PDF.
+  useEffect(() => {
+    const onResize = () => setPanelW((w) => Math.min(w, maxPanelW()));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  /**
+   * Back to the landing page.
+   *
+   * Two ways in, so two ways out: a paper named in the URL has to be navigated
+   * away from or resolvePdfSource would just reopen it, while one picked from
+   * the landing page is only React state. Either way the selections and the
+   * conversation are dropped — they refer to pages of the document being left,
+   * and the navigation path would discard them regardless.
+   */
+  const goHome = () => {
+    regionStore.clear();
+    chatStore.clear();
+    if (doc.target) {
+      window.location.href = window.location.origin + '/';
+      return;
+    }
+    setPicked(null);
+  };
+
   // On mobile the panels are overlays, so only one may be open at a time.
   const openSidebar = (v: boolean) => {
     setSidebarOpen(v);
@@ -783,7 +818,14 @@ export default function App() {
                   <header className="dd-top dd-no-interaction">
                     {/* logo is desktop-only — the phone needs the width for tools */}
                     <h1 className="dd-logo">
-                      drawde <span>{activeLabel}</span>
+                      <button
+                        className="dd-home"
+                        onClick={goHome}
+                        title="Back to the landing page"
+                      >
+                        drawde
+                      </button>{' '}
+                      <span>{activeLabel}</span>
                     </h1>
                     <ModeController
                       documentId={activeDocumentId}
@@ -873,7 +915,7 @@ export default function App() {
                     {panelOpen && !isMobile && (
                       <Splitter
                         side="right"
-                        onDrag={(dx) => setPanelW((w) => clamp(w + dx, 240, 720))}
+                        onDrag={(dx) => setPanelW((w) => clamp(w + dx, 240, maxPanelW()))}
                       />
                     )}
                     {panelOpen && (

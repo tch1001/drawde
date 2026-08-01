@@ -707,3 +707,89 @@ test.describe('mobile · responsive layout', () => {
     expect(metaBox.y, 'the pill is still in the top bar').toBeGreaterThan(topBox.y + topBox.height);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Chat pane: automatic OCR, text size, width, and the way home.
+ * ═══════════════════════════════════════════════════════════════════════ */
+test.describe('desktop · context pane', () => {
+  test('21 · drawing a region starts OCR immediately, without a send', async ({ page }) => {
+    await boot(page);
+    await dragOnPage(page, BOX_A);
+
+    // wait for the crop itself to land — OCR is kicked off from that callback
+    await expect(page.locator('.dd-card .dd-crop')).toBeVisible({ timeout: 20_000 });
+
+    // Deliberately NOT asserting that recognition succeeds: warming the Texo
+    // model is a large download, and CI may have no route to it. What must be
+    // true either way is that OCR was *entered* rather than deferred to Send —
+    // so any terminal or in-flight state passes, and the old "wait for ask"
+    // state does not exist any more.
+    const stub = page.locator('.dd-card .dd-stub');
+    await expect(stub).toHaveText(/reading…|OCR ✓|OCR failed/, { timeout: 20_000 });
+    await expect(stub).not.toHaveText(/on ask/i);
+
+    // and nothing was sent on the user's behalf
+    await expect(page.locator('.dd-msg')).toHaveCount(0);
+  });
+
+  test('22 · A+/A− rescale the chat text, persist, and reset', async ({ page }) => {
+    await boot(page);
+    const panel = page.locator('.dd-panel');
+    const val = page.locator('.dd-fontsize-val');
+    await expect(val).toHaveText('100%');
+
+    const composer = page.locator('.dd-composer-input');
+    await dragOnPage(page, BOX_A); // the composer only exists with a selection
+    const before = parseFloat(await cssOf(composer, 'font-size'));
+
+    await page.locator('.dd-fontsize button[aria-label="Larger chat text"]').click();
+    await page.locator('.dd-fontsize button[aria-label="Larger chat text"]').click();
+    await expect(val).toHaveText('120%');
+    expect(await cssOf(panel, '--dd-chat-scale')).toBe('1.2');
+    const after = parseFloat(await cssOf(composer, 'font-size'));
+    expect(after, 'the composer text actually grew').toBeGreaterThan(before);
+
+    // survives a reload — it is a preference, not view state
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.dd-app', { timeout: 90_000 });
+    await expect(page.locator('.dd-fontsize-val')).toHaveText('120%');
+
+    // the value doubles as the reset
+    await page.locator('.dd-fontsize-val').click();
+    await expect(page.locator('.dd-fontsize-val')).toHaveText('100%');
+  });
+
+  test('23 · the pane can be dragged past the old 720px cap, up to 70%', async ({ page }) => {
+    await boot(page);
+    const panel = page.locator('.dd-panel');
+    const start = (await panel.boundingBox())!.width;
+
+    // right-hand splitter: dragging LEFT widens the pane (App.tsx negates dx).
+    // Overshoot hard so the clamp, not the gesture, decides where it stops.
+    const sp = (await page.locator('.dd-splitter').last().boundingBox())!;
+    await realDrag(
+      page,
+      { x: sp.x + sp.width / 2, y: sp.y + 200 },
+      { x: 20, y: sp.y + 200 },
+      { steps: 25 },
+    );
+
+    const widened = (await panel.boundingBox())!.width;
+    const winW = await page.evaluate(() => window.innerWidth);
+    expect(widened, 'wider than it started').toBeGreaterThan(start);
+    expect(widened, 'past the old 720px ceiling').toBeGreaterThan(720);
+    expect(widened, 'but not past 70% of the window').toBeLessThanOrEqual(winW * 0.7 + 2);
+  });
+
+  test('24 · clicking the drawde wordmark returns to the landing page', async ({ page }) => {
+    await boot(page);
+    await dragOnPage(page, BOX_A);
+    await expect(page.locator('.dd-card')).toHaveCount(1);
+
+    await page.locator('.dd-home').click();
+
+    // the paper came from the URL, so this is a real navigation back to root
+    await expect(page.locator('.dd-landing')).toBeVisible({ timeout: 90_000 });
+    expect(new URL(page.url()).pathname).toBe('/');
+  });
+});

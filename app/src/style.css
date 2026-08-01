@@ -331,7 +331,7 @@ kbd {
   background: var(--panel); border-left: 1px solid var(--border);
 }
 .dd-panel-head {
-  display: flex; align-items: center; gap: .55rem;
+  display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
   padding: .7rem .9rem; border-bottom: 1px solid var(--border);
 }
 .dd-panel-head h2 { font-size: .9rem; margin: 0; }
@@ -340,7 +340,7 @@ kbd {
   border-radius: 999px; padding: .05rem .5rem; font-size: .75rem;
 }
 .dd-clear {
-  margin-left: auto; background: none; border: none; cursor: pointer;
+  background: none; border: none; cursor: pointer;
   color: var(--muted); font-size: .76rem; text-decoration: underline;
 }
 .dd-clear:hover { color: var(--pink); }
@@ -400,7 +400,11 @@ kbd {
 .dd-latex-pending { color: var(--muted); background: rgba(255,255,255,.03); border-color: var(--border); font-style: italic; }
 .dd-latex-error { color: var(--yellow, #e0af68); background: rgba(224,175,104,.08); border-color: rgba(224,175,104,.25); font-style: italic; }
 
+/* Anchors the right-hand cluster (gear · clear all · text size · close).
+   It sits on the gear rather than on "clear all" because that button is
+   conditional — with nothing selected there'd be no `auto` left to push. */
 .dd-gear {
+  margin-left: auto;
   background: none; border: none; cursor: pointer; color: var(--muted);
   font-size: .95rem; padding: 0 .2rem;
 }
@@ -734,3 +738,45 @@ kbd {
 @media (pointer: coarse) {
   .dd-rect-x { width: 28px; height: 28px; font-size: 19px; top: -14px; right: -14px; }
 }
+
+/* ── chat text size ─────────────────────────────────────────
+   A− / A+ beside "clear all", with the current value doubling as a reset.
+   Everything the pane renders as words is sized off --dd-chat-scale, set as
+   an inline style on .dd-panel, so one control moves the thread, the cards,
+   the OCR'd maths and the composer together. Deliberately not applied to the
+   header or the ✕ affordances: those are chrome, and scaling them would push
+   the controls out of a narrow panel. */
+.dd-fontsize {
+  display: inline-flex; align-items: center; gap: .1rem;
+  border: 1px solid var(--border); border-radius: 7px; padding: .05rem;
+}
+.dd-fontsize button {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: .72rem; line-height: 1; padding: .2rem .3rem; border-radius: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.dd-fontsize button:hover:not(:disabled) { color: var(--text); background: var(--panel2); }
+.dd-fontsize button:disabled { opacity: .35; cursor: default; }
+.dd-fontsize-val { min-width: 2.6em; text-align: center; }
+
+.dd-panel { --dd-chat-scale: 1; }
+.dd-msg { font-size: calc(.84rem * var(--dd-chat-scale)); }
+.dd-msg-error { font-size: calc(.78rem * var(--dd-chat-scale)); }
+.dd-text { font-size: calc(.8rem * var(--dd-chat-scale)); }
+.dd-composer-input { font-size: calc(.84rem * var(--dd-chat-scale)); }
+/* KaTeX sizes itself in em, so scaling the box scales the maths with it */
+.dd-latex { font-size: calc(.74rem * var(--dd-chat-scale)); }
+/* Only the strip's thumbnails are capped (90px); grow that cap with the text so
+   the crop stays legible next to the equation it produced. Card crops are
+   uncapped and must stay that way. */
+.dd-context-strip .dd-crop { max-height: calc(90px * var(--dd-chat-scale)); }
+
+/* The wordmark doubles as the way back to the landing page. Styled to stay a
+   heading rather than look like a button — the pointer and hover colour are
+   the only affordances. */
+.dd-home {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; color: inherit; letter-spacing: inherit;
+}
+.dd-home:hover { color: var(--accent); }
+.dd-home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }

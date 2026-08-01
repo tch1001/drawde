@@ -37,6 +37,8 @@ class ChatStore {
   };
   private abort: AbortController | null = null;
   private seq = 0;
+  /** Tail of the OCR queue — see runOcr. */
+  private ocrChain: Promise<void> = Promise.resolve();
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -72,13 +74,40 @@ class ChatStore {
     this.set({ busy: false, status: null });
   }
 
-  /** Run OCR on any box region that hasn't been recognised yet. */
-  async runOcr(regions: Region[]) {
-    const todo = regions.filter(
-      (r) => r.kind === 'box' && r.imageBase64 && !r.latex && r.ocrState !== 'running',
+  /**
+   * OCR every box region that hasn't been recognised yet.
+   *
+   * Serialised through a single chain: selections arrive one drag at a time, so
+   * without this each new crop would race the last into ocr.warm() and the
+   * `ocrState !== 'running'` guard — which is only set once the loop reaches a
+   * region — would let the same equation be recognised twice. Awaiting the tail
+   * also means ask() transparently waits for any auto-OCR still in flight.
+   */
+  runOcr(regions: Region[]): Promise<void> {
+    this.ocrChain = this.ocrChain.then(() => this.runOcrNow(regions)).catch(() => {});
+    return this.ocrChain;
+  }
+
+  /** OCR whatever is currently selected and not yet read. */
+  ocrPending(): Promise<void> {
+    return this.runOcr(regionStore.getSnapshot());
+  }
+
+  private async runOcrNow(regions: Region[]) {
+    // re-read: a region passed in may have been recognised or removed while
+    // this call sat in the queue
+    const live = regionStore.getSnapshot();
+    const todo = live.filter(
+      (r) =>
+        regions.some((x) => x.id === r.id) &&
+        r.kind === 'box' &&
+        r.imageBase64 &&
+        !r.latex &&
+        r.ocrState !== 'running',
     );
     if (!todo.length) return;
 
+    const prior = this.state.status;
     this.set({ status: 'Loading OCR model…' });
     await ocr.warm((f) => this.set({ modelProgress: f }));
     this.set({ modelProgress: null });
@@ -99,7 +128,8 @@ class ChatStore {
         });
       }
     }
-    this.set({ status: null });
+    // Don't wipe "Thinking…" if a selection made mid-answer triggered this.
+    this.set({ status: this.state.busy ? prior : null });
   }
 
   async ask(question: string) {

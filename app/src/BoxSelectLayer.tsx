@@ -5,6 +5,7 @@ import { useDocumentState } from '@embedpdf/core/react';
 import type { Position } from '@embedpdf/models';
 import { CROP_SCALE, type Rect, type Region } from './types';
 import { nextRegionId, regionStore, useRegionsForPage } from './store';
+import { chatStore } from './chat';
 import { BOX_MODE } from './modes';
 import { selectionMode } from './selection-mode';
 
@@ -41,6 +42,11 @@ function renderCrop(
         imageBase64: base64,
         pending: false,
       });
+      // Recognise straight away rather than at send time: the LaTeX is the
+      // thing you check before asking, and waiting until Send is what made it
+      // arrive too late to be worth reading. Queued, so rapid multi-select
+      // doesn't start several model loads.
+      void chatStore.ocrPending();
     },
     () => regionStore.update(regionId, { pending: false }),
   );

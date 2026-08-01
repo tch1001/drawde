@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useRegions, regionStore } from './store';
 import { chatStore, useChat } from './chat';
-import { settingsStore, useSettings } from './providers';
+import { settingsStore, useSettings, FONT_MIN, FONT_MAX, FONT_STEP } from './providers';
 import { Markdown } from './Markdown';
 import { LatexPreview, LatexEditor } from './LatexEditor';
 import type { Region } from './types';
@@ -155,7 +155,13 @@ function RegionCard({ region, index }: { region: Region; index: number }) {
           </>
         )}
         <span className="dd-stub">
-          {region.latex ? 'OCR ✓' : region.kind === 'box' ? 'OCR on ask' : 'text layer'}
+          {region.latex
+            ? 'OCR ✓'
+            : region.kind === 'box'
+              ? region.ocrState === 'error'
+                ? 'OCR failed'
+                : 'reading…'
+              : 'text layer'}
         </span>
       </div>
     </div>
@@ -181,7 +187,12 @@ export function SelectionPanel({
   const hasKey = available.length > 0;
 
   return (
-    <aside className="dd-panel dd-no-interaction" style={width ? { width } : undefined}>
+    <aside
+      className="dd-panel dd-no-interaction"
+      // Scopes the text-size preference to this pane: everything that renders
+      // words — thread, cards, composer — is sized off this one variable.
+      style={{ ...(width ? { width } : {}), ['--dd-chat-scale' as any]: settings.fontScale }}
+    >
       <header className="dd-panel-head">
         <h2>Context</h2>
         <span className="dd-count">{regions.length}</span>
@@ -197,6 +208,29 @@ export function SelectionPanel({
             clear all
           </button>
         )}
+        <span className="dd-fontsize" title="Chat text size">
+          <button
+            onClick={() => settingsStore.bumpFontScale(-FONT_STEP)}
+            disabled={settings.fontScale <= FONT_MIN}
+            aria-label="Smaller chat text"
+          >
+            A−
+          </button>
+          <button
+            className="dd-fontsize-val"
+            onClick={() => settingsStore.resetFontScale()}
+            title="Reset to 100%"
+          >
+            {Math.round(settings.fontScale * 100)}%
+          </button>
+          <button
+            onClick={() => settingsStore.bumpFontScale(FONT_STEP)}
+            disabled={settings.fontScale >= FONT_MAX}
+            aria-label="Larger chat text"
+          >
+            A+
+          </button>
+        </span>
         {onClose && (
           <button className="dd-panel-close" onClick={onClose} aria-label="Close panel">
             ×

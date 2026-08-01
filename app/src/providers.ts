@@ -86,12 +86,18 @@ export function providerOf(id: ProviderId) {
 
 const KEY_PREFIX = 'drawde.key.';
 const MODEL_KEY = 'drawde.model';
+const FONT_KEY = 'drawde.fontScale';
+
+/** Chat text size, as a multiplier. Dense equations get read at arm's length. */
+export const FONT_MIN = 0.8;
+export const FONT_MAX = 1.8;
+export const FONT_STEP = 0.1;
 
 type Keys = Partial<Record<ProviderId, string>>;
 
 class SettingsStore {
   private listeners = new Set<() => void>();
-  private snapshot: { keys: Keys; persisted: boolean; modelId: string };
+  private snapshot: { keys: Keys; persisted: boolean; modelId: string; fontScale: number };
 
   constructor() {
     const keys: Keys = {};
@@ -107,6 +113,7 @@ class SettingsStore {
       keys,
       persisted,
       modelId: stored ?? PROVIDERS[0].models[0].id,
+      fontScale: clampFont(Number(localStorage.getItem(FONT_KEY)) || 1),
     };
   }
 
@@ -164,6 +171,26 @@ class SettingsStore {
     this.snapshot = { ...this.snapshot, modelId: id };
     this.listeners.forEach((l) => l());
   }
+
+  /** Nudge the chat text size by ±FONT_STEP; persists across sessions. */
+  bumpFontScale(delta: number) {
+    const next = clampFont(this.snapshot.fontScale + delta);
+    if (next === this.snapshot.fontScale) return;
+    localStorage.setItem(FONT_KEY, String(next));
+    this.snapshot = { ...this.snapshot, fontScale: next };
+    this.listeners.forEach((l) => l());
+  }
+
+  resetFontScale() {
+    localStorage.removeItem(FONT_KEY);
+    this.snapshot = { ...this.snapshot, fontScale: 1 };
+    this.listeners.forEach((l) => l());
+  }
+}
+
+// rounded because repeated ±0.1 in binary floating point drifts to 1.0999999
+function clampFont(v: number) {
+  return Math.round(Math.min(FONT_MAX, Math.max(FONT_MIN, v)) * 100) / 100;
 }
 
 export const settingsStore = new SettingsStore();
