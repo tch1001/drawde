@@ -37,6 +37,7 @@ import { PAN_MODE } from './modes';
 import { BOX_MODE, TEXT_MODE } from './modes';
 import { nextRegionId, regionStore, useRegions } from './store';
 import { chatStore } from './chat';
+import { documentKey } from './persist';
 import type { Region } from './types';
 import { resolvePdfSource, fetchPdf } from './pdf-source';
 import { Landing } from './Landing';
@@ -736,6 +737,21 @@ export default function App() {
     setPanelOpen(!isMobile);
   }, [isMobile]);
 
+  // Bind the chat to whichever document is open: restores its saved thread and
+  // makes subsequent messages save under that document's key.
+  useEffect(() => {
+    if (!activeUrl) return;
+    // A dropped file's blob: URL is regenerated every open, so it cannot
+    // identify the document — documentKey falls back to the name for those.
+    const reopenable = doc.target ?? (picked && !picked.url.startsWith('blob:') ? picked.url : null);
+    const label = activeLabel || 'document';
+    void chatStore.bindDocument({
+      key: documentKey(reopenable ?? activeUrl, label),
+      url: reopenable,
+      label,
+    });
+  }, [activeUrl, activeLabel, doc.target, picked]);
+
   // The 70% ceiling is relative to the window, so shrinking it can strand the
   // panel above the limit. Pull it back rather than let it crowd out the PDF.
   useEffect(() => {
@@ -755,7 +771,7 @@ export default function App() {
    */
   const goHome = () => {
     regionStore.clear();
-    chatStore.clear();
+    chatStore.reset();
     if (doc.target) {
       window.location.href = window.location.origin + '/';
       return;

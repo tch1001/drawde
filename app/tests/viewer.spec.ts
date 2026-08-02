@@ -891,3 +891,87 @@ test.describe('desktop · context snapshot on send', () => {
     expect(scaled.after / scaled.before).toBeCloseTo(1.5, 1);
   });
 });
+
+test.describe('desktop · saved conversations', () => {
+  /** A stubbed streaming answer, so a thread exists without a real API key. */
+  async function stubModel(page: Page, text = 'Because $\\frac{1}{N}$ is small.') {
+    const ev = (o: object) => `data: ${JSON.stringify(o)}\n\n`;
+    const body =
+      `event: message_start\n${ev({ type: 'message_start', message: { id: 'm1', type: 'message', role: 'assistant', model: 'claude-opus-5', content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 1 } } })}` +
+      `event: content_block_start\n${ev({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}` +
+      `event: content_block_delta\n${ev({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } })}` +
+      `event: content_block_stop\n${ev({ type: 'content_block_stop', index: 0 })}` +
+      `event: message_delta\n${ev({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } })}` +
+      `event: message_stop\n${ev({ type: 'message_stop' })}`;
+    await page.route('**://api.anthropic.com/**', (r) =>
+      r.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' },
+        body,
+      }),
+    );
+    await page.evaluate(() => {
+      localStorage.setItem('drawde.key.anthropic', 'sk-ant-test');
+      localStorage.setItem('drawde.model', 'claude-opus-5');
+    });
+  }
+
+  async function reboot(page: Page) {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.dd-app', { timeout: 90_000 });
+    await page.waitForSelector('.dd-layer');
+  }
+
+  test('27 · a conversation survives a reload, crops and all', async ({ page }) => {
+    await boot(page);
+    await stubModel(page);
+    await reboot(page);
+
+    await dragOnPage(page, BOX_A);
+    await page.locator('.dd-composer-input').fill('why does this hold?');
+    await page.locator('.dd-send').click();
+    await expect(page.locator('.dd-msg-assistant .dd-md')).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1200); // the save is debounced
+
+    await reboot(page);
+
+    await expect(page.locator('.dd-msg')).toHaveCount(2, { timeout: 30_000 });
+    await expect(page.locator('.dd-msg-user .dd-msg-text')).toHaveText('why does this hold?');
+    await expect(page.locator('.dd-msg-assistant .dd-md')).toContainText('Because');
+
+    // The crop must come back as a data: URL. An object URL from the previous
+    // page is dead after a reload, and would render as a broken image.
+    const crop = page.locator('.dd-msg-context .dd-crop');
+    await expect(crop).toBeVisible();
+    const info = await crop.evaluate((i: HTMLImageElement) => ({
+      scheme: i.src.split(':')[0],
+      painted: i.complete && i.naturalWidth > 0,
+    }));
+    expect(info.scheme, 'restored crops are self-contained').toBe('data');
+    expect(info.painted, 'the restored crop actually has pixels').toBe(true);
+  });
+
+  test('28 · a saved chat is listed on the landing page and reopens', async ({ page }) => {
+    await boot(page);
+    await stubModel(page);
+    await reboot(page);
+
+    await dragOnPage(page, BOX_A);
+    await page.locator('.dd-composer-input').fill('explain the prefactor');
+    await page.locator('.dd-send').click();
+    await expect(page.locator('.dd-msg-assistant .dd-md')).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1200);
+
+    // the wordmark unloads the thread but must NOT delete it
+    await page.locator('.dd-home').click();
+    await expect(page.locator('.dd-landing')).toBeVisible({ timeout: 90_000 });
+
+    const entry = page.locator('.dd-recent-item').first();
+    await expect(entry).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.dd-recent-preview').first()).toHaveText('explain the prefactor');
+
+    await entry.click();
+    await page.waitForSelector('.dd-app', { timeout: 90_000 });
+    await expect(page.locator('.dd-msg')).toHaveCount(2, { timeout: 30_000 });
+  });
+});

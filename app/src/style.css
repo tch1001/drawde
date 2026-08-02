@@ -109,6 +109,14 @@ body {
 }
 .dd-landing-example code { background: none; padding: 0; }
 
+/* Reads as a link, not a button — it is the low-commitment third option after
+   "drop a file" and "paste a link". Had no base rule at all until now, so it
+   rendered with the browser's default button chrome. */
+.dd-linkbtn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--accent); font: inherit; text-align: left;
+}
+.dd-linkbtn:hover { text-decoration: underline; }
 .dd-landing .dd-linkbtn { margin-top: 1.4rem; font-size: .85rem; }
 .dd-landing-foot {
   margin-top: 1.6rem; font-size: .76rem; color: var(--muted);
@@ -560,9 +568,17 @@ kbd {
   color: #111;
 }
 .dd-md .katex { font-size: 1em; color: #111; }
+/* inline-block is load-bearing: as `display: inline` the pill takes its height
+   from the font rather than from its content, so anything stacked — a \frac, a
+   \sum with limits — overflowed the white box and got visibly clipped. As an
+   inline-block the background wraps the real height, and the taller box also
+   grows its line so it cannot collide with the line above. Baseline alignment
+   still works because KaTeX emits a strut for exactly that. */
 .dd-md :not(.katex-display) > .katex {
+  display: inline-block;
+  vertical-align: baseline;
   background: #fff; border-radius: 4px;
-  padding: .05em .28em;
+  padding: .1em .3em;
 }
 /* the fallback for unparseable maths stays legible on white too */
 .dd-md .dd-tex-fallback { color: #b45309; }
@@ -796,3 +812,58 @@ kbd {
 .dd-msg-context .dd-card { margin-bottom: .4rem; opacity: .9; }
 .dd-msg-context .dd-crop { max-height: calc(120px * var(--dd-chat-scale)); object-fit: contain; object-position: left; }
 .dd-card.is-sent { background: transparent; border-style: dashed; }
+
+/* ── landing: upload on top, recent | suggestions below ─────
+   The inner column widens for the two-up row; the upload block stays narrow
+   and centred so the page still leads with one obvious action. */
+.dd-landing-inner { max-width: 900px; }
+.dd-landing-top { max-width: 560px; margin: 0 auto; }
+
+.dd-landing-cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;
+  margin-top: 2rem; text-align: left;
+}
+/* one column on a phone: side-by-side would make both unreadably narrow */
+@media (max-width: 760px) {
+  .dd-landing-cols { grid-template-columns: 1fr; gap: 1.6rem; }
+}
+.dd-landing-col { min-width: 0; }
+.dd-col-head {
+  font-size: .82rem; font-weight: 600; color: var(--text);
+  margin: 0 0 .7rem; text-transform: none; letter-spacing: .01em;
+}
+.dd-landing-cols .dd-landing-trick { margin-top: 0; }
+.dd-landing-cols .dd-linkbtn { margin-top: 1rem; }
+
+.dd-recent-empty {
+  margin: 0; font-size: .82rem; color: var(--muted); line-height: 1.6;
+  background: var(--panel); border: 1px dashed var(--border);
+  border-radius: 10px; padding: 1rem;
+}
+.dd-recent-list { list-style: none; margin: 0; padding: 0; }
+.dd-recent-list li { position: relative; margin-bottom: .5rem; }
+.dd-recent-item {
+  display: block; text-decoration: none; color: inherit;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: .6rem .7rem;
+  padding-right: 1.9rem; /* room for the forget button */
+  transition: border-color .15s, background .15s;
+}
+.dd-recent-item:hover { border-color: var(--accent); background: var(--panel2); }
+.dd-recent-label {
+  display: block; font-size: .86rem; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dd-recent-preview {
+  display: block; font-size: .78rem; color: var(--muted); margin-top: .15rem;
+  /* two lines then fade — questions are a sentence, not a title */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dd-recent-meta { display: block; font-size: .72rem; color: var(--muted); opacity: .75; margin-top: .3rem; }
+.dd-recent-x {
+  position: absolute; top: .45rem; right: .45rem;
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 1.05rem; line-height: 1; padding: .1rem .25rem; border-radius: 5px;
+}
+.dd-recent-x:hover { color: var(--pink); background: var(--panel2); }

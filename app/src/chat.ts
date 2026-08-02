@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { ocr } from './ocr';
 import { llm, type ChatTurn } from './llm';
 import { regionStore } from './store';
+import { deleteSession, fromStored, loadSession, saveSession, toStored } from './persist';
 import type { Region } from './types';
 
 export interface ChatMessage {
@@ -45,6 +46,85 @@ class ChatStore {
   private seq = 0;
   /** Tail of the OCR queue — see runOcr. */
   private ocrChain: Promise<void> = Promise.resolve();
+  /** Which document this thread belongs to; null before one is open. */
+  private doc: { key: string; url: string | null; label: string } | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Attach the store to a document: restore its saved thread, and from here on
+   * save changes under its key.
+   *
+   * Ids are bumped past anything restored so a new message can never collide
+   * with a loaded one — patchMessage matches on id, and a collision would edit
+   * the wrong turn.
+   */
+  async bindDocument(doc: { key: string; url: string | null; label: string }) {
+    if (this.doc?.key === doc.key) return;
+    // Settle the outgoing thread first: a pending debounce would otherwise fire
+    // after the swap and write the previous document's messages under the new
+    // document's key.
+    this.flushNow();
+    this.doc = doc;
+    const saved = await loadSession(doc.key);
+    if (this.doc?.key !== doc.key) return; // a different document won the race
+    const messages = saved ? fromStored(saved.messages) : [];
+    for (const m of messages) {
+      const n = Number(m.id.replace(/^m/, ''));
+      if (Number.isFinite(n) && n > this.seq) this.seq = n;
+    }
+    this.set({ messages, busy: false, status: null });
+  }
+
+  /**
+   * Debounced because streaming patches the assistant message on every delta;
+   * writing each one would mean hundreds of IndexedDB transactions per answer.
+   */
+  private schedulePersist() {
+    if (!this.doc) return;
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      const doc = this.doc;
+      if (!doc) return;
+      void saveSession({
+        key: doc.key,
+        url: doc.url,
+        label: doc.label,
+        updatedAt: Date.now(),
+        messages: toStored(this.state.messages),
+      });
+    }, 500);
+  }
+
+  /** Write any debounced change out now, under the document it belongs to. */
+  private flushNow() {
+    if (!this.saveTimer || !this.doc) return;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    void saveSession({
+      key: this.doc.key,
+      url: this.doc.url,
+      label: this.doc.label,
+      updatedAt: Date.now(),
+      messages: toStored(this.state.messages),
+    });
+  }
+
+  /**
+   * Leave the document without touching what was saved.
+   *
+   * Distinct from clear(): closing a paper should leave its thread in the
+   * recent list, whereas clear() is the user deliberately throwing it away.
+   */
+  reset() {
+    this.abort?.abort();
+    this.flushNow();
+    this.state.messages.forEach((m) =>
+      m.contexts?.forEach((r) => r.imageUrl?.startsWith('blob:') && URL.revokeObjectURL(r.imageUrl)),
+    );
+    this.doc = null;
+    this.set({ messages: [], busy: false, status: null });
+  }
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -60,6 +140,7 @@ class ChatStore {
   private push(msg: ChatMessage) {
     this.state = { ...this.state, messages: [...this.state.messages, msg] };
     this.listeners.forEach((l) => l());
+    this.schedulePersist();
   }
 
   private patchMessage(id: string, patch: Partial<ChatMessage>) {
@@ -68,15 +149,20 @@ class ChatStore {
       messages: this.state.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     };
     this.listeners.forEach((l) => l());
+    this.schedulePersist();
   }
 
   clear() {
     this.abort?.abort();
     // The messages own their snapshots' crops (regionStore.detach handed them
     // over without revoking), so dropping the thread has to free them.
+    // restored threads carry data: URLs, which own nothing and must not be revoked
     this.state.messages.forEach((m) =>
-      m.contexts?.forEach((r) => r.imageUrl && URL.revokeObjectURL(r.imageUrl)),
+      m.contexts?.forEach((r) => r.imageUrl?.startsWith('blob:') && URL.revokeObjectURL(r.imageUrl)),
     );
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    if (this.doc) void deleteSession(this.doc.key);
     this.set({ messages: [], busy: false, status: null });
   }
 
